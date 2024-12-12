@@ -2,30 +2,31 @@ import { useState, useEffect, useContext } from 'react';
 import { db } from '../../config/firebase';
 import { AuthContext } from '../../context/AuthContext';
 import { collection, query, getDocs, where } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 import {
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
+  FileDownload,
+  TrendingUp,
+  AccountBalance,
+  AttachMoney,
+  PieChart as PieChartIcon
+} from '@mui/icons-material';
+import {
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
-import {
-  FileDownload,
-  PieChart as PieChartIcon,
-  BarChart as BarChartIcon,
-  Assessment,
-  CalendarToday
-} from '@mui/icons-material';
+import toast from 'react-hot-toast';
 
 const Reports = () => {
   const { currentUser } = useContext(AuthContext);
-  const [loading, setLoading] = useState(true);
   const [reportData, setReportData] = useState({
     prestamos: [],
     pagos: [],
@@ -36,11 +37,16 @@ const Reports = () => {
       montoPendiente: 0,
       prestamosActivos: 0,
       prestamosCompletados: 0
-    }
+    },
+    graphData: []
+  });
+  const [loading, setLoading] = useState(true);
+  const [filterDate, setFilterDate] = useState({
+    startDate: '',
+    endDate: ''
   });
 
   const COLORS = ['#FFD100', '#000000', '#FF0000', '#666666'];
-  const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
   const formatMoney = (amount) => {
     return new Intl.NumberFormat('es-CO', {
@@ -48,126 +54,192 @@ const Reports = () => {
       currency: 'COP',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
-    }).format(amount);
+    }).format(amount || 0);
   };
 
   useEffect(() => {
-    const fetchReportData = async () => {
-      if (!currentUser) return;
-
-      try {
-        setLoading(true);
-
-        // Obtener préstamos
-        const loansQuery = query(
-          collection(db, 'loans'),
-          where('adminId', '==', currentUser.uid)
-        );
-        const loansSnapshot = await getDocs(loansQuery);
-        const prestamos = loansSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Obtener pagos
-        const paymentsQuery = query(
-          collection(db, 'payments'),
-          where('adminId', '==', currentUser.uid)
-        );
-        const paymentsSnapshot = await getDocs(paymentsQuery);
-        const pagos = paymentsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Obtener deudores
-        const debtorsQuery = query(
-          collection(db, 'debtors'),
-          where('adminId', '==', currentUser.uid)
-        );
-        const debtorsSnapshot = await getDocs(debtorsQuery);
-        const deudores = debtorsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Calcular estadísticas
-        const montoTotal = prestamos.reduce((sum, loan) => sum + (loan.totalPayment || 0), 0);
-        const montoPagado = prestamos.reduce((sum, loan) => sum + (loan.paidAmount || 0), 0);
-        const montoPendiente = montoTotal - montoPagado;
-        const prestamosActivos = prestamos.filter(loan => loan.status === 'active').length;
-        const prestamosCompletados = prestamos.filter(loan => loan.status === 'completed').length;
-
-        setReportData({
-          prestamos,
-          pagos,
-          deudores,
-          stats: {
-            montoTotal,
-            montoPagado,
-            montoPendiente,
-            prestamosActivos,
-            prestamosCompletados
-          }
-        });
-
-      } catch (error) {
-        console.error('Error al cargar datos:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchReportData();
-  }, [currentUser]);
+  }, [currentUser, filterDate]);
 
-  // Preparar datos para los gráficos
-  const prepareChartData = () => {
-    // Datos para el gráfico de estado de préstamos
-    const statusData = [
-      { name: 'Activos', value: reportData.stats.prestamosActivos },
-      { name: 'Completados', value: reportData.stats.prestamosCompletados }
-    ];
+  const fetchReportData = async () => {
+    if (!currentUser) return;
 
-    // Datos para el gráfico de pagos mensuales
-    const monthlyData = Array(12).fill(0).map((_, index) => ({
-      month: MONTHS[index],
-      pagos: 0,
-      prestamos: 0
-    }));
+    try {
+      setLoading(true);
 
-    reportData.pagos.forEach(pago => {
-      const date = new Date(pago.paymentDate);
-      monthlyData[date.getMonth()].pagos += pago.amount || 0;
-    });
+      // Obtener préstamos
+      const loansQuery = query(
+        collection(db, 'loans'),
+        where('adminId', '==', currentUser.uid)
+      );
+      const loansSnapshot = await getDocs(loansQuery);
+      const prestamos = loansSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-    reportData.prestamos.forEach(prestamo => {
-      const date = new Date(prestamo.createdAt);
-      monthlyData[date.getMonth()].prestamos += prestamo.totalPayment || 0;
-    });
+      // Obtener pagos
+      const paymentsQuery = query(
+        collection(db, 'payments'),
+        where('adminId', '==', currentUser.uid)
+      );
+      const paymentsSnapshot = await getDocs(paymentsQuery);
+      const pagos = paymentsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-    return {
-      statusData,
-      monthlyData
-    };
+      // Filtrar por fecha si es necesario
+      const filteredPagos = pagos.filter(pago => {
+        if (!filterDate.startDate || !filterDate.endDate) return true;
+        const pagoDate = new Date(pago.paymentDate);
+        const startDate = new Date(filterDate.startDate);
+        const endDate = new Date(filterDate.endDate);
+        return pagoDate >= startDate && pagoDate <= endDate;
+      });
+
+      // Calcular estadísticas
+      const montoTotal = prestamos.reduce((sum, loan) => sum + (loan.totalPayment || 0), 0);
+      const montoPagado = prestamos.reduce((sum, loan) => sum + (loan.paidAmount || 0), 0);
+      const montoPendiente = montoTotal - montoPagado;
+      const prestamosActivos = prestamos.filter(loan => loan.status === 'active').length;
+      const prestamosCompletados = prestamos.filter(loan => loan.status === 'completed').length;
+
+      // Preparar datos para gráficos
+      const monthlyData = {};
+      filteredPagos.forEach(pago => {
+        const date = new Date(pago.paymentDate);
+        const monthYear = `${date.getMonth() + 1}/${date.getFullYear()}`;
+        
+        if (!monthlyData[monthYear]) {
+          monthlyData[monthYear] = {
+            name: monthYear,
+            pagos: 0,
+            montoTotal: 0
+          };
+        }
+        
+        monthlyData[monthYear].pagos += pago.amount || 0;
+      });
+
+      prestamos.forEach(prestamo => {
+        const date = new Date(prestamo.createdAt);
+        const monthYear = `${date.getMonth() + 1}/${date.getFullYear()}`;
+        
+        if (!monthlyData[monthYear]) {
+          monthlyData[monthYear] = {
+            name: monthYear,
+            pagos: 0,
+            montoTotal: 0
+          };
+        }
+        
+        monthlyData[monthYear].montoTotal += prestamo.totalPayment || 0;
+      });
+
+      setReportData({
+        prestamos,
+        pagos: filteredPagos,
+        stats: {
+          montoTotal,
+          montoPagado,
+          montoPendiente,
+          prestamosActivos,
+          prestamosCompletados
+        },
+        graphData: Object.values(monthlyData)
+      });
+
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+      toast.error('Error al cargar los datos');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const generateCSV = (data, filename) => {
-    const headers = Object.keys(data[0]);
-    const csvContent = [
-      headers.join(','),
-      ...data.map(row => 
-        headers.map(header => 
-          JSON.stringify(row[header] || '')
-        ).join(',')
-      )
-    ].join('\n');
+  const generateExcel = () => {
+    try {
+      // Preparar datos para el reporte
+      const reportRows = reportData.pagos
+        .filter(pago => pago.paymentDate)
+        .map(pago => {
+          const prestamo = reportData.prestamos.find(p => p.id === pago.loanId);
+          return {
+            'Nombre del Deudor': pago.debtorName || 'N/A',
+            'Fecha de Pago': new Date(pago.paymentDate).toLocaleDateString('es-CO'),
+            'Total Préstamo': prestamo?.totalPayment || pago.totalLoanAmount || 0,
+            'Saldo Restante': pago.remainingAfterPayment || 0,
+            'Valor Pagado': pago.amount || 0,
+            'Método de Pago': pago.paymentMethod || 'N/A',
+            'Referencia': pago.reference || 'N/A'
+          };
+        });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
+      // Agregar fila de totales
+      reportRows.push({
+        'Nombre del Deudor': 'TOTALES',
+        'Fecha de Pago': '',
+        'Total Préstamo': reportData.stats.montoTotal,
+        'Saldo Restante': reportData.stats.montePendiente,
+        'Valor Pagado': reportData.stats.montoPagado,
+        'Método de Pago': '',
+        'Referencia': ''
+      });
+
+      // Crear libro de trabajo
+      const wb = XLSX.utils.book_new();
+      
+      // Convertir datos a hoja de trabajo
+      const ws = XLSX.utils.json_to_sheet(reportRows);
+
+      // Configurar anchos de columna
+      ws['!cols'] = [
+        { wch: 30 }, // Nombre
+        { wch: 15 }, // Fecha
+        { wch: 15 }, // Total
+        { wch: 15 }, // Saldo
+        { wch: 15 }, // Valor Pagado
+        { wch: 15 }, // Método
+        { wch: 20 }  // Referencia
+      ];
+
+      // Aplicar estilos
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellRef];
+          if (!cell) continue;
+
+          // Formato de moneda para columnas numéricas
+          if (C >= 2 && C <= 4) {
+            cell.z = '"$"#,##0';
+          }
+
+          // Estilo para encabezados y totales
+          if (R === 0 || R === range.e.r) {
+            cell.s = {
+              fill: { fgColor: { rgb: "FFD100" } },
+              font: { bold: true, color: { rgb: "000000" } },
+              alignment: { horizontal: "center" }
+            };
+          }
+        }
+      }
+
+      // Agregar la hoja al libro
+      XLSX.utils.book_append_sheet(wb, ws, 'Reporte de Pagos');
+
+      // Generar y descargar el archivo
+      const fileName = `reporte_pagos_${new Date().toLocaleDateString('es-CO').replace(/\//g, '-')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success('Reporte exportado exitosamente');
+
+    } catch (error) {
+      console.error('Error al generar Excel:', error);
+      toast.error('Error al generar el reporte');
+    }
   };
 
   if (loading) {
@@ -178,61 +250,121 @@ const Reports = () => {
     );
   }
 
-  const { statusData, monthlyData } = prepareChartData();
-
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
+      {/* Encabezado y Controles */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-6 space-y-4 md:space-y-0">
         <h1 className="text-2xl font-bold">Reportes y Estadísticas</h1>
-        <div className="space-x-2">
+        
+        <div className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+          <div className="flex space-x-2">
+            <input
+              type="date"
+              value={filterDate.startDate}
+              onChange={(e) => setFilterDate(prev => ({ ...prev, startDate: e.target.value }))}
+              className="border rounded px-2 py-1"
+            />
+            <input
+              type="date"
+              value={filterDate.endDate}
+              onChange={(e) => setFilterDate(prev => ({ ...prev, endDate: e.target.value }))}
+              className="border rounded px-2 py-1"
+            />
+          </div>
+          
           <button
-            onClick={() => generateCSV(reportData.prestamos, 'prestamos')}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center"
+            onClick={generateExcel}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg flex items-center justify-center"
           >
-            <FileDownload className="mr-2" /> Exportar Préstamos
-          </button>
-          <button
-            onClick={() => generateCSV(reportData.pagos, 'pagos')}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center"
-          >
-            <FileDownload className="mr-2" /> Exportar Pagos
+            <FileDownload className="mr-2" /> Exportar a Excel
           </button>
         </div>
       </div>
 
       {/* Tarjetas de Resumen */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Resumen Financiero</h3>
-          <div className="space-y-4">
+          <div className="flex items-center">
+            <AttachMoney className="text-yellow-600 mr-4" style={{ fontSize: 40 }} />
             <div>
-              <p className="text-gray-500">Monto Total Prestado</p>
-              <p className="text-2xl font-bold text-yellow-600">
-                {formatMoney(reportData.stats.montoTotal)}
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-500">Monto Cobrado</p>
-              <p className="text-2xl font-bold text-green-600">
-                {formatMoney(reportData.stats.montoPagado)}
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-500">Monto Pendiente</p>
-              <p className="text-2xl font-bold text-red-600">
-                {formatMoney(reportData.stats.montoPendiente)}
-              </p>
+              <p className="text-gray-500">Monto Total</p>
+              <p className="text-2xl font-bold">{formatMoney(reportData.stats.montoTotal)}</p>
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <AccountBalance className="text-green-600 mr-4" style={{ fontSize: 40 }} />
+            <div>
+              <p className="text-gray-500">Total Cobrado</p>
+              <p className="text-2xl font-bold">{formatMoney(reportData.stats.montoPagado)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <TrendingUp className="text-red-600 mr-4" style={{ fontSize: 40 }} />
+            <div>
+              <p className="text-gray-500">Por Cobrar</p>
+              <p className="text-2xl font-bold">{formatMoney(reportData.stats.montoPendiente)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <PieChartIcon className="text-blue-600 mr-4" style={{ fontSize: 40 }} />
+            <div>
+              <p className="text-gray-500">Préstamos Activos</p>
+              <p className="text-2xl font-bold">{reportData.stats.prestamosActivos}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Gráficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Tendencia de Pagos</h3>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={reportData.graphData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value) => formatMoney(value)} />
+                <Legend />
+                <Line 
+                  type="monotone" 
+                  dataKey="montoTotal" 
+                  name="Préstamos" 
+                  stroke="#FFD100" 
+                  strokeWidth={2}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="pagos" 
+                  name="Pagos" 
+                  stroke="#000000" 
+                  strokeWidth={2}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Estado de Préstamos</h3>
-          <div className="h-64">
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={statusData}
+                  data={[
+                    { name: 'Activos', value: reportData.stats.prestamosActivos },
+                    { name: 'Completados', value: reportData.stats.prestamosCompletados }
+                  ]}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -241,7 +373,7 @@ const Reports = () => {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {statusData.map((entry, index) => (
+                  {reportData.graphData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -250,160 +382,99 @@ const Reports = () => {
             </ResponsiveContainer>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Estadísticas Generales</h3>
-          <div className="space-y-4">
-            <div>
-              <p className="text-gray-500">Total de Préstamos</p>
-              <p className="text-2xl font-bold">
-                {reportData.prestamos.length}
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-500">Préstamos Activos</p>
-              <p className="text-2xl font-bold text-green-600">
-                {reportData.stats.prestamosActivos}
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-500">Préstamos Completados</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {reportData.stats.prestamosCompletados}
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-500">Total de Deudores</p>
-              <p className="text-2xl font-bold">
-                {reportData.deudores.length}
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Gráfico de Tendencias */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h3 className="text-lg font-semibold mb-4">Tendencias Mensuales</h3>
-        <div className="h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip formatter={(value) => formatMoney(value)} />
-              <Legend />
-              <Bar dataKey="prestamos" name="Préstamos" fill="#FFD100" />
-              <Bar dataKey="pagos" name="Pagos" fill="#000000" />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Tabla de Pagos */}
+      <div className="bg-gray-50 p-6 min-h-screen">
+  <h3 className="text-2xl font-bold mb-6 text-gray-800">Historial de Pagos</h3>
+  <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+    {reportData.pagos
+      .sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
+      .map((pago) => (
+        <div
+          key={pago.id}
+          className="bg-white rounded-xl shadow-lg border border-gray-200 transition-transform transform hover:scale-105 hover:shadow-xl"
+        >
+          <div className="p-5">
+            <div className="flex justify-between items-center">
+              <h4 className="text-lg font-bold text-gray-900">
+                {pago.debtorName}
+              </h4>
+              <span className="bg-yellow-100 text-yellow-600 text-xs font-medium px-3 py-1 rounded-full capitalize">
+                {pago.paymentMethod}
+              </span>
+            </div>
+            <div className="mt-4 space-y-2 text-sm text-gray-600">
+              <p className="flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-gray-400 mr-2"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M10 20a2 2 0 002-2H8a2 2 0 002 2zM5.03 7H4a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-1.03a8 8 0 10-11.94 0z" />
+                </svg>
+                <span>
+                  <strong>Monto Total:</strong> {formatMoney(pago.totalLoanAmount)}
+                </span>
+              </p>
+              <p className="flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-green-400 mr-2"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M5 13a1 1 0 011-1h8a1 1 0 011 1v3h3v-3a1 1 0 00-1-1h-2.585A2 2 0 0013 9.414l-2-2V6a2 2 0 10-4 0v1.414l-2 2A2 2 0 003.585 12H2a1 1 0 00-1 1v3h3v-3z" />
+                </svg>
+                <span>
+                  <strong>Monto Pagado:</strong> {formatMoney(pago.amount)}
+                </span>
+              </p>
+              <p className="flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-red-400 mr-2"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M13 7H7v6h6V7z" />
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-14a6 6 0 110 12 6 6 0 010-12z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span>
+                  <strong>Saldo Restante:</strong>{" "}
+                  {formatMoney(pago.remainingAfterPayment)}
+                </span>
+              </p>
+              <p className="flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-blue-400 mr-2"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6 2a1 1 0 011-1h6a1 1 0 011 1v4h3a1 1 0 110 2h-1v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8H2a1 1 0 110-2h3V2zm2 0v4h4V2H8z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span>
+                  <strong>Fecha:</strong>{" "}
+                  {new Date(pago.paymentDate).toLocaleDateString()}
+                </span>
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      ))}
+  </div>
+</div>
 
-      {/* Tablas de Detalle */}
-      <div className="grid grid-cols-1 gap-8">
-        {/* Tabla de Últimos Préstamos */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold">Últimos Préstamos</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Deudor
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Monto
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Fecha
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Estado
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {reportData.prestamos.slice(0, 5).map((prestamo) => (
-                  <tr key={prestamo.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {prestamo.debtorName}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {formatMoney(prestamo.totalPayment)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {new Date(prestamo.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                        ${prestamo.status === 'active' ? 'bg-green-100 text-green-800' : 
-                        prestamo.status === 'completed' ? 'bg-blue-100 text-blue-800' : 
-                        'bg-red-100 text-red-800'}`}>
-                        {prestamo.status === 'active' ? 'Activo' : 
-                         prestamo.status === 'completed' ? 'Completado' : 'Vencido'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Tabla de Últimos Pagos */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold">Últimos Pagos</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Deudor
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Monto Pagado
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Fecha
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Método
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Referencia
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {reportData.pagos.slice(0, 5).map((pago) => (
-                  <tr key={pago.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {pago.debtorName}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {formatMoney(pago.amount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {new Date(pago.paymentDate).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap capitalize">
-                      {pago.paymentMethod}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {pago.reference || '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

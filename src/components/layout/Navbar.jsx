@@ -82,9 +82,21 @@ const Navbar = () => {
         </div>
       </div>
 
-      {currentUser && isMobileMenuOpen && (
-        <div className="md:hidden">
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+      {currentUser && (
+        <div 
+          className={`fixed inset-y-0 right-0 md:hidden transform ${
+            isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+          } transition-transform duration-300 ease-in-out bg-yellow-400 w-64 h-full shadow-lg z-50`}
+        >
+          <div className="flex justify-end p-4">
+            <button
+              className="text-black hover:text-red-600"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="px-2 pt-2 pb-3 space-y-1">
             {menuItems.map((item) => (
               <Link
                 key={item.path}
@@ -122,9 +134,16 @@ const Navbar = () => {
           </div>
         </div>
       )}
+
+      {/* Overlay for mobile menu */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        ></div>
+      )}
     </nav>
   );
 };
 
 export default Navbar;
-

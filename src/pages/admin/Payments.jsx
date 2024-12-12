@@ -5,7 +5,8 @@ import {
   collection, 
   addDoc, 
   query, 
-  getDocs, 
+  getDocs,
+  getDoc, 
   doc, 
   updateDoc, 
   where,
@@ -28,36 +29,49 @@ const Payments = () => {
     reference: ''
   });
 
-  // Función para formatear números
-  const formatNumber = (number) => {
-    if (!number) return '0.00';
-    return number.toLocaleString('es-CO', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
+  const formatMoney = (number) => {
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(number || 0);
   };
 
+  // Cargar préstamos y pagos
   const fetchData = async () => {
     if (!currentUser) return;
 
     try {
       setLoading(true);
       
-      // Cargar todos los préstamos primero
-      const loansQuery = query(
-        collection(db, 'loans'),
+      // Primero cargar todos los deudores
+      const debtorsQuery = query(
+        collection(db, 'debtors'),
         where('adminId', '==', currentUser.uid)
       );
+      const debtorsSnapshot = await getDocs(debtorsQuery);
+      const debtorsData = {};
+      debtorsSnapshot.docs.forEach(doc => {
+        debtorsData[doc.id] = { id: doc.id, ...doc.data() };
+      });
+      
+      // Cargar préstamos activos
+      const loansQuery = query(
+        collection(db, 'loans'),
+        where('adminId', '==', currentUser.uid),
+        where('status', '==', 'active')
+      );
       const loansSnapshot = await getDocs(loansQuery);
-      const loansData = {};
-      loansSnapshot.docs.forEach(doc => {
-        loansData[doc.id] = {
-          id: doc.id,
-          ...doc.data(),
-          remainingAmount: doc.data().remainingAmount || doc.data().totalPayment
+      const loansData = loansSnapshot.docs.map(doc => {
+        const loan = { id: doc.id, ...doc.data() };
+        const debtor = debtorsData[loan.debtorId];
+        return {
+          ...loan,
+          debtorName: debtor ? debtor.name : 'Deudor no encontrado'
         };
       });
-      setLoans(Object.values(loansData));
+      setLoans(loansData);
 
       // Cargar pagos
       const paymentsQuery = query(
@@ -67,21 +81,15 @@ const Payments = () => {
       const paymentsSnapshot = await getDocs(paymentsQuery);
       const paymentsData = paymentsSnapshot.docs.map(doc => {
         const payment = { id: doc.id, ...doc.data() };
-        const loan = loansData[payment.loanId];
+        const loan = loansData.find(l => l.id === payment.loanId);
         return {
           ...payment,
-          debtorName: loan?.debtorName || 'Préstamo no encontrado',
-          totalLoanAmount: loan?.totalPayment || 0,
-          remainingAfterPayment: payment.remainingAfterPayment || 0
+          debtorName: payment.debtorName || loan?.debtorName || 'Préstamo no encontrado',
+          totalLoanAmount: loan?.totalPayment || 0
         };
-      });
-
-      // Ordenar pagos por fecha, más recientes primero
-      const sortedPayments = paymentsData.sort((a, b) => 
-        new Date(b.paymentDate) - new Date(a.paymentDate)
-      );
-
-      setPayments(sortedPayments);
+      }).sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+      
+      setPayments(paymentsData);
 
     } catch (error) {
       console.error('Error al cargar datos:', error);
@@ -109,15 +117,14 @@ const Payments = () => {
       }
 
       const paymentAmount = parseFloat(formData.amount);
-      const currentRemainingAmount = loan.remainingAmount || loan.totalPayment;
       
-      if (paymentAmount > currentRemainingAmount) {
+      if (paymentAmount > loan.remainingAmount) {
         toast.error('El monto del pago excede la deuda pendiente');
         return;
       }
 
       // Calcular nuevo saldo
-      const newRemainingAmount = currentRemainingAmount - paymentAmount;
+      const newRemainingAmount = loan.remainingAmount - paymentAmount;
       const newPaidAmount = (loan.paidAmount || 0) + paymentAmount;
 
       // Crear el pago
@@ -125,15 +132,14 @@ const Payments = () => {
         ...formData,
         adminId: currentUser.uid,
         debtorId: loan.debtorId,
+        debtorName: loan.debtorName, // Guardamos el nombre del deudor
         amount: paymentAmount,
         totalLoanAmount: loan.totalPayment,
         remainingAfterPayment: newRemainingAmount,
-        debtorName: loan?.debtorName || 'Sin nombre',
         createdAt: new Date().toISOString()
       };
 
-      // Registrar el pago
-      const paymentRef = await addDoc(collection(db, 'payments'), paymentData);
+      await addDoc(collection(db, 'payments'), paymentData);
 
       // Actualizar el préstamo
       const newStatus = newRemainingAmount <= 0 ? 'completed' : 'active';
@@ -141,8 +147,7 @@ const Payments = () => {
         remainingAmount: newRemainingAmount,
         paidAmount: newPaidAmount,
         status: newStatus,
-        lastPaymentDate: formData.paymentDate,
-        lastPaymentId: paymentRef.id
+        lastPaymentDate: formData.paymentDate
       });
 
       toast.success('Pago registrado exitosamente');
@@ -154,9 +159,7 @@ const Payments = () => {
         paymentMethod: 'cash',
         reference: ''
       });
-      
-      // Recargar los datos inmediatamente
-      await fetchData();
+      fetchData();
 
     } catch (error) {
       console.error('Error:', error);
@@ -174,71 +177,96 @@ const Payments = () => {
     );
   }
 
+  // Componente para la vista móvil de pagos
+  const PaymentCard = ({ payment }) => (
+    <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-lg font-semibold">{payment.debtorName}</h3>
+        <span className="text-sm bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+          {payment.paymentMethod}
+        </span>
+      </div>
+      <div className="space-y-2">
+        <div className="flex justify-between">
+          <span className="text-gray-600">Monto Total:</span>
+          <span className="font-medium">{formatMoney(payment.totalLoanAmount)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Monto Pagado:</span>
+          <span className="font-medium text-green-600">{formatMoney(payment.amount)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Saldo Restante:</span>
+          <span className="font-medium text-red-600">{formatMoney(payment.remainingAfterPayment)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Fecha:</span>
+          <span className="font-medium">{new Date(payment.paymentDate).toLocaleDateString()}</span>
+        </div>
+        {payment.reference && (
+          <div className="flex justify-between">
+            <span className="text-gray-600">Referencia:</span>
+            <span className="font-medium">{payment.reference}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Gestión de Pagos</h1>
+    <div className="container mx-auto px-4 py-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
+        <h1 className="text-2xl md:text-3xl font-bold">Gestión de Pagos</h1>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center"
+          className="w-full md:w-auto bg-yellow-600 text-white px-6 py-3 rounded-lg flex items-center justify-center text-lg"
           disabled={loans.length === 0}
         >
           <Add className="mr-2" /> Registrar Pago
         </button>
       </div>
 
-      {/* Lista de Pagos */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Vista móvil */}
+      <div className="md:hidden">
+        {payments.map((payment) => (
+          <PaymentCard key={payment.id} payment={payment} />
+        ))}
+      </div>
+
+      {/* Vista desktop */}
+      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Deudor
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Monto Total
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Monto Pagado
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Saldo Restante
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Fecha de Pago
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Método
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Referencia
-                </th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Deudor</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Monto Total</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Monto Pagado</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Saldo Restante</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Fecha de Pago</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Método</th>
+                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase">Referencia</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {payments.map((payment) => (
-                <tr key={payment.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {payment.debtorName}
+                <tr key={payment.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 text-base">{payment.debtorName}</td>
+                  <td className="px-6 py-4 text-base">{formatMoney(payment.totalLoanAmount)}</td>
+                  <td className="px-6 py-4 text-base text-green-600">
+                    {formatMoney(payment.amount)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    ${formatNumber(payment.totalLoanAmount)}
+                  <td className="px-6 py-4 text-base text-red-600">
+                    {formatMoney(payment.remainingAfterPayment)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-green-600">
-                    ${formatNumber(payment.amount)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-red-600">
-                    ${formatNumber(payment.remainingAfterPayment)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 text-base">
                     {new Date(payment.paymentDate).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap capitalize">
+                  <td className="px-6 py-4 text-base capitalize">
                     {payment.paymentMethod}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {payment.reference}
+                  <td className="px-6 py-4 text-base">
+                    {payment.reference || '-'}
                   </td>
                 </tr>
               ))}
@@ -247,135 +275,115 @@ const Payments = () => {
         </div>
       </div>
 
-      {/* Modal de Registro de Pago */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg p-8 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">Registrar Nuevo Pago</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Préstamo
-                </label>
-                <select
-                  value={formData.loanId}
-                  onChange={(e) => {
-                    const selectedLoan = loans.find(l => l.id === e.target.value);
-                    setFormData({
-                      ...formData,
-                      loanId: e.target.value
-                    });
-                  }}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  required
-                >
-                  <option value="">Seleccione un préstamo</option>
-                  {loans.map((loan) => (
-                    <option key={loan.id} value={loan.id}>
-                      {loan.debtorName} - Pendiente: ${formatNumber(loan.remainingAmount)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+{/* Modal de Registro de Pago */}
+{isModalOpen && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <h2 className="text-xl md:text-2xl font-bold mb-6 text-gray-800">
+        Registrar Nuevo Pago
+      </h2>
+      
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-2">
+          <label className="block text-base font-semibold text-gray-700">
+            Préstamo
+          </label>
+          <select
+            value={formData.loanId}
+            onChange={(e) => setFormData({ ...formData, loanId: e.target.value })}
+            className="block w-full rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2.5 px-3"
+            required
+          >
+            <option value="">Seleccione un préstamo</option>
+            {loans.map((loan) => (
+              <option key={loan.id} value={loan.id}>
+                {loan.debtorName} - Pendiente: {formatMoney(loan.remainingAmount)}
+              </option>
+            ))}
+          </select>
+        </div>
 
-              {formData.loanId && (
-                <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                  <h3 className="font-semibold mb-2">Resumen del Préstamo</h3>
-                  {loans.find(l => l.id === formData.loanId) && (
-                    <>
-                      <p className="text-sm text-gray-600">
-                        Monto total: ${formatNumber(loans.find(l => l.id === formData.loanId).totalPayment)}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        Saldo pendiente: ${formatNumber(loans.find(l => l.id === formData.loanId).remainingAmount)}
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Monto del Pago
-                </label>
-                <div className="mt-1 relative rounded-md shadow-sm">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">$</span>
-                  </div>
-                  <input
-                    type="number"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="mt-1 block w-full pl-7 rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                    min="0"
-                    max={loans.find(l => l.id === formData.loanId)?.remainingAmount}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Fecha de Pago
-                </label>
-                <input
-                  type="date"
-                  value={formData.paymentDate}
-                  onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Método de Pago
-                </label>
-                <select
-                  value={formData.paymentMethod}
-                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  required
-                >
-                  <option value="cash">Efectivo</option>
-                  <option value="transfer">Transferencia</option>
-                  <option value="card">Tarjeta</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Referencia
-                </label>
-                <input
-                  type="text"
-                  value={formData.reference}
-                  onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  placeholder="Número de transferencia, recibo, etc."
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-                >
-                  {loading ? 'Procesando...' : 'Registrar Pago'}
-                </button>
-              </div>
-            </form>
+        <div className="space-y-2">
+          <label className="block text-base font-semibold text-gray-700">
+            Monto del Pago
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span className="text-base text-gray-500">$</span>
+            </div>
+            <input
+              type="number"
+              value={formData.amount}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              className="block w-full pl-7 rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2.5 px-3"
+              required
+            />
           </div>
         </div>
-      )}
+
+        <div className="space-y-2">
+          <label className="block text-base font-semibold text-gray-700">
+            Fecha de Pago
+          </label>
+          <input
+            type="date"
+            value={formData.paymentDate}
+            onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
+            className="block w-full rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2.5 px-3"
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-base font-semibold text-gray-700">
+            Método de Pago
+          </label>
+          <select
+            value={formData.paymentMethod}
+            onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+            className="block w-full rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2.5 px-3"
+            required
+          >
+            <option value="cash">Efectivo</option>
+            <option value="transfer">Transferencia</option>
+            <option value="card">Tarjeta</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-base font-semibold text-gray-700">
+            Referencia
+          </label>
+          <input
+            type="text"
+            value={formData.reference}
+            onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+            className="block w-full rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2.5 px-3"
+            placeholder="Número de transferencia, recibo, etc."
+          />
+        </div>
+
+        <div className="flex flex-col space-y-3 mt-6">
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full px-4 py-3 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+          >
+            {loading ? 'Procesando...' : 'Registrar Pago'}
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(false)}
+            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm text-base font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
     </div>
   );
 };
