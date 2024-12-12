@@ -8,7 +8,9 @@ import {
   TrendingUp,
   AccountBalance,
   AttachMoney,
-  PieChart as PieChartIcon
+  Assessment,
+  PieChart as PieChartIcon,
+  MonetizationOn
 } from '@mui/icons-material';
 import {
   LineChart,
@@ -40,11 +42,11 @@ const Reports = () => {
     },
     graphData: []
   });
-  const [loading, setLoading] = useState(true);
-  const [filterDate, setFilterDate] = useState({
+  const [dateRange, setDateRange] = useState({
     startDate: '',
     endDate: ''
   });
+  const [loading, setLoading] = useState(true);
 
   const COLORS = ['#FFD100', '#000000', '#FF0000', '#666666'];
 
@@ -56,10 +58,6 @@ const Reports = () => {
       maximumFractionDigits: 0
     }).format(amount || 0);
   };
-
-  useEffect(() => {
-    fetchReportData();
-  }, [currentUser, filterDate]);
 
   const fetchReportData = async () => {
     if (!currentUser) return;
@@ -91,10 +89,11 @@ const Reports = () => {
 
       // Filtrar por fecha si es necesario
       const filteredPagos = pagos.filter(pago => {
-        if (!filterDate.startDate || !filterDate.endDate) return true;
+        if (!dateRange.startDate || !dateRange.endDate) return true;
         const pagoDate = new Date(pago.paymentDate);
-        const startDate = new Date(filterDate.startDate);
-        const endDate = new Date(filterDate.endDate);
+        const startDate = new Date(dateRange.startDate);
+        const endDate = new Date(dateRange.endDate);
+        endDate.setHours(23, 59, 59);
         return pagoDate >= startDate && pagoDate <= endDate;
       });
 
@@ -147,7 +146,11 @@ const Reports = () => {
           prestamosActivos,
           prestamosCompletados
         },
-        graphData: Object.values(monthlyData)
+        graphData: Object.values(monthlyData).sort((a, b) => {
+          const [monthA, yearA] = a.name.split('/');
+          const [monthB, yearB] = b.name.split('/');
+          return new Date(yearA, monthA - 1) - new Date(yearB, monthB - 1);
+        })
       });
 
     } catch (error) {
@@ -158,34 +161,25 @@ const Reports = () => {
     }
   };
 
+  useEffect(() => {
+    fetchReportData();
+  }, [currentUser, dateRange]);
+
   const generateExcel = () => {
     try {
       // Preparar datos para el reporte
       const reportRows = reportData.pagos
-        .filter(pago => pago.paymentDate)
-        .map(pago => {
-          const prestamo = reportData.prestamos.find(p => p.id === pago.loanId);
-          return {
-            'Nombre del Deudor': pago.debtorName || 'N/A',
-            'Fecha de Pago': new Date(pago.paymentDate).toLocaleDateString('es-CO'),
-            'Total Préstamo': prestamo?.totalPayment || pago.totalLoanAmount || 0,
-            'Saldo Restante': pago.remainingAfterPayment || 0,
-            'Valor Pagado': pago.amount || 0,
-            'Método de Pago': pago.paymentMethod || 'N/A',
-            'Referencia': pago.reference || 'N/A'
-          };
-        });
-
-      // Agregar fila de totales
-      reportRows.push({
-        'Nombre del Deudor': 'TOTALES',
-        'Fecha de Pago': '',
-        'Total Préstamo': reportData.stats.montoTotal,
-        'Saldo Restante': reportData.stats.montePendiente,
-        'Valor Pagado': reportData.stats.montoPagado,
-        'Método de Pago': '',
-        'Referencia': ''
-      });
+        .sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
+        .map(pago => ({
+          'Nombre del Deudor': pago.debtorName || 'N/A',
+          'Fecha de Pago': new Date(pago.paymentDate).toLocaleDateString('es-CO'),
+          'Monto Préstamo': formatMoney(pago.totalLoanAmount),
+          'Valor Pagado': formatMoney(pago.amount),
+          'Saldo Restante': formatMoney(pago.remainingAfterPayment),
+          'Método de Pago': pago.paymentMethod === 'cash' ? 'Efectivo' : 
+                          pago.paymentMethod === 'transfer' ? 'Transferencia' : 'Tarjeta',
+          'Referencia': pago.reference || '-'
+        }));
 
       // Crear libro de trabajo
       const wb = XLSX.utils.book_new();
@@ -195,11 +189,11 @@ const Reports = () => {
 
       // Configurar anchos de columna
       ws['!cols'] = [
-        { wch: 30 }, // Nombre
+        { wch: 30 }, // Deudor
         { wch: 15 }, // Fecha
-        { wch: 15 }, // Total
-        { wch: 15 }, // Saldo
+        { wch: 15 }, // Monto Préstamo
         { wch: 15 }, // Valor Pagado
+        { wch: 15 }, // Saldo Restante
         { wch: 15 }, // Método
         { wch: 20 }  // Referencia
       ];
@@ -211,11 +205,6 @@ const Reports = () => {
           const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
           const cell = ws[cellRef];
           if (!cell) continue;
-
-          // Formato de moneda para columnas numéricas
-          if (C >= 2 && C <= 4) {
-            cell.z = '"$"#,##0';
-          }
 
           // Estilo para encabezados y totales
           if (R === 0 || R === range.e.r) {
@@ -231,7 +220,7 @@ const Reports = () => {
       // Agregar la hoja al libro
       XLSX.utils.book_append_sheet(wb, ws, 'Reporte de Pagos');
 
-      // Generar y descargar el archivo
+      // Generar el archivo
       const fileName = `reporte_pagos_${new Date().toLocaleDateString('es-CO').replace(/\//g, '-')}.xlsx`;
       XLSX.writeFile(wb, fileName);
       toast.success('Reporte exportado exitosamente');
@@ -241,6 +230,7 @@ const Reports = () => {
       toast.error('Error al generar el reporte');
     }
   };
+  // Continuación del componente Reports...
 
   if (loading) {
     return (
@@ -251,32 +241,32 @@ const Reports = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-6">
       {/* Encabezado y Controles */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 space-y-4 md:space-y-0">
-        <h1 className="text-2xl font-bold">Reportes y Estadísticas</h1>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0 md:space-x-4">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Reportes y Estadísticas</h1>
         
-        <div className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+        <div className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
           <div className="flex space-x-2">
             <input
               type="date"
-              value={filterDate.startDate}
-              onChange={(e) => setFilterDate(prev => ({ ...prev, startDate: e.target.value }))}
-              className="border rounded px-2 py-1"
+              value={dateRange.startDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+              className="block rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2 px-3"
             />
             <input
               type="date"
-              value={filterDate.endDate}
-              onChange={(e) => setFilterDate(prev => ({ ...prev, endDate: e.target.value }))}
-              className="border rounded px-2 py-1"
+              value={dateRange.endDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+              className="block rounded-lg border-2 border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 text-base py-2 px-3"
             />
           </div>
           
           <button
             onClick={generateExcel}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg flex items-center justify-center"
+            className="bg-yellow-600 text-white px-6 py-2.5 rounded-lg flex items-center justify-center hover:bg-yellow-700 transition-colors"
           >
-            <FileDownload className="mr-2" /> Exportar a Excel
+            <FileDownload className="mr-2" /> Exportar Excel
           </button>
         </div>
       </div>
@@ -285,9 +275,9 @@ const Reports = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center">
-            <AttachMoney className="text-yellow-600 mr-4" style={{ fontSize: 40 }} />
+            <MonetizationOn className="text-yellow-600 mr-4" style={{ fontSize: 40 }} />
             <div>
-              <p className="text-gray-500">Monto Total</p>
+              <p className="text-gray-500 text-sm">Total Préstamos</p>
               <p className="text-2xl font-bold">{formatMoney(reportData.stats.montoTotal)}</p>
             </div>
           </div>
@@ -297,7 +287,7 @@ const Reports = () => {
           <div className="flex items-center">
             <AccountBalance className="text-green-600 mr-4" style={{ fontSize: 40 }} />
             <div>
-              <p className="text-gray-500">Total Cobrado</p>
+              <p className="text-gray-500 text-sm">Total Cobrado</p>
               <p className="text-2xl font-bold">{formatMoney(reportData.stats.montoPagado)}</p>
             </div>
           </div>
@@ -307,7 +297,7 @@ const Reports = () => {
           <div className="flex items-center">
             <TrendingUp className="text-red-600 mr-4" style={{ fontSize: 40 }} />
             <div>
-              <p className="text-gray-500">Por Cobrar</p>
+              <p className="text-gray-500 text-sm">Por Cobrar</p>
               <p className="text-2xl font-bold">{formatMoney(reportData.stats.montoPendiente)}</p>
             </div>
           </div>
@@ -315,9 +305,9 @@ const Reports = () => {
 
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center">
-            <PieChartIcon className="text-blue-600 mr-4" style={{ fontSize: 40 }} />
+            <Assessment className="text-blue-600 mr-4" style={{ fontSize: 40 }} />
             <div>
-              <p className="text-gray-500">Préstamos Activos</p>
+              <p className="text-gray-500 text-sm">Préstamos Activos</p>
               <p className="text-2xl font-bold">{reportData.stats.prestamosActivos}</p>
             </div>
           </div>
@@ -326,6 +316,7 @@ const Reports = () => {
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Gráfico de Tendencias */}
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Tendencia de Pagos</h3>
           <div className="h-80">
@@ -336,18 +327,18 @@ const Reports = () => {
                 <YAxis />
                 <Tooltip formatter={(value) => formatMoney(value)} />
                 <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="montoTotal" 
-                  name="Préstamos" 
-                  stroke="#FFD100" 
+                <Line
+                  type="monotone"
+                  dataKey="montoTotal"
+                  name="Préstamos"
+                  stroke="#FFD100"
                   strokeWidth={2}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="pagos" 
-                  name="Pagos" 
-                  stroke="#000000" 
+                <Line
+                  type="monotone"
+                  dataKey="pagos"
+                  name="Pagos"
+                  stroke="#000000"
                   strokeWidth={2}
                 />
               </LineChart>
@@ -355,6 +346,7 @@ const Reports = () => {
           </div>
         </div>
 
+        {/* Gráfico de Estado de Préstamos */}
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Estado de Préstamos</h3>
           <div className="h-80">
@@ -384,97 +376,71 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* Tabla de Pagos */}
-      <div className="bg-gray-50 p-6 min-h-screen">
-  <h3 className="text-2xl font-bold mb-6 text-gray-800">Historial de Pagos</h3>
-  <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-    {reportData.pagos
-      .sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
-      .map((pago) => (
-        <div
-          key={pago.id}
-          className="bg-white rounded-xl shadow-lg border border-gray-200 transition-transform transform hover:scale-105 hover:shadow-xl"
-        >
-          <div className="p-5">
-            <div className="flex justify-between items-center">
-              <h4 className="text-lg font-bold text-gray-900">
-                {pago.debtorName}
-              </h4>
-              <span className="bg-yellow-100 text-yellow-600 text-xs font-medium px-3 py-1 rounded-full capitalize">
-                {pago.paymentMethod}
+      {/* Vista Móvil de Pagos Recientes */}
+      <div className="md:hidden space-y-4">
+        <h3 className="text-lg font-semibold mb-2">Pagos Recientes</h3>
+        {reportData.pagos.slice(0, 5).map((pago, index) => (
+          <div key={index} className="bg-white rounded-lg shadow p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="font-semibold">{pago.debtorName}</span>
+              <span className="text-sm text-gray-500">
+                {new Date(pago.paymentDate).toLocaleDateString()}
               </span>
             </div>
-            <div className="mt-4 space-y-2 text-sm text-gray-600">
-              <p className="flex items-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-gray-400 mr-2"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path d="M10 20a2 2 0 002-2H8a2 2 0 002 2zM5.03 7H4a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-1.03a8 8 0 10-11.94 0z" />
-                </svg>
-                <span>
-                  <strong>Monto Total:</strong> {formatMoney(pago.totalLoanAmount)}
-                </span>
-              </p>
-              <p className="flex items-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-green-400 mr-2"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path d="M5 13a1 1 0 011-1h8a1 1 0 011 1v3h3v-3a1 1 0 00-1-1h-2.585A2 2 0 0013 9.414l-2-2V6a2 2 0 10-4 0v1.414l-2 2A2 2 0 003.585 12H2a1 1 0 00-1 1v3h3v-3z" />
-                </svg>
-                <span>
-                  <strong>Monto Pagado:</strong> {formatMoney(pago.amount)}
-                </span>
-              </p>
-              <p className="flex items-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-red-400 mr-2"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path d="M13 7H7v6h6V7z" />
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-14a6 6 0 110 12 6 6 0 010-12z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                <span>
-                  <strong>Saldo Restante:</strong>{" "}
-                  {formatMoney(pago.remainingAfterPayment)}
-                </span>
-              </p>
-              <p className="flex items-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-blue-400 mr-2"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M6 2a1 1 0 011-1h6a1 1 0 011 1v4h3a1 1 0 110 2h-1v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8H2a1 1 0 110-2h3V2zm2 0v4h4V2H8z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                <span>
-                  <strong>Fecha:</strong>{" "}
-                  {new Date(pago.paymentDate).toLocaleDateString()}
-                </span>
-              </p>
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Monto Pagado:</span>
+                <span className="font-medium text-green-600">{formatMoney(pago.amount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Método:</span>
+                <span className="capitalize">{pago.paymentMethod}</span>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
-  </div>
-</div>
+        ))}
+      </div>
 
+      {/* Vista Desktop de Pagos Recientes */}
+      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold">Pagos Recientes</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deudor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto Pagado</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Método</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Referencia</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {reportData.pagos.slice(0, 5).map((pago, index) => (
+                <tr key={index}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {pago.debtorName}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                    {formatMoney(pago.amount)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
+                    {pago.paymentMethod}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(pago.paymentDate).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {pago.reference || '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };
