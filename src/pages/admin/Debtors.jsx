@@ -225,12 +225,8 @@ const sendWhatsAppMessage = () => {
               <p className="flex items-center text-gray-600">
                 <Phone className="mr-2" /> {debtor.phone}
               </p>
-              <p className="flex items-center text-gray-600">
-                <Email className="mr-2" /> {debtor.email}
-              </p>
-              <p className="flex items-center text-gray-600">
-                <LocationOn className="mr-2" /> {debtor.address}
-              </p>
+              
+             
             </div>
             <div className="mt-4">
               <button
