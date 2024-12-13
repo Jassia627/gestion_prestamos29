@@ -1,12 +1,13 @@
-import { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { db } from '../../config/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 
 const Profile = () => {
   const { currentUser } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [userData, setUserData] = useState({
     firstName: '',
     lastName: '',
@@ -14,13 +15,16 @@ const Profile = () => {
     phone: ''
   });
   const [isEditing, setIsEditing] = useState(false);
+  const [originalData, setOriginalData] = useState(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
-          setUserData(userDoc.data());
+          const data = userDoc.data();
+          setUserData(data);
+          setOriginalData(data);
         }
       } catch (error) {
         toast.error('Error al cargar los datos del usuario');
@@ -36,120 +40,155 @@ const Profile = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
       await updateDoc(doc(db, 'users', currentUser.uid), userData);
+      setOriginalData(userData);
       toast.success('Perfil actualizado exitosamente');
       setIsEditing(false);
     } catch (error) {
       toast.error('Error al actualizar el perfil');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setUserData(prev => ({
+    setUserData((prev) => ({
       ...prev,
       [name]: value
     }));
   };
 
+  const handleCancel = () => {
+    setUserData(originalData);
+    setIsEditing(false);
+  };
+
+  const hasChanges = () => {
+    return JSON.stringify(userData) !== JSON.stringify(originalData);
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-yellow-500"></div>
       </div>
     );
   }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">Perfil de Usuario</h1>
-        
-        <div className="bg-white rounded-lg shadow p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Nombre
-              </label>
-              <input
-                type="text"
-                name="firstName"
-                value={userData.firstName}
-                onChange={handleChange}
-                disabled={!isEditing}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 disabled:bg-gray-100"
-              />
+      <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-5 bg-gradient-to-r from-yellow-500 to-yellow-600 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-700 text-2xl font-bold">
+              {userData.firstName?.[0]}{userData.lastName?.[0]}
+            </div>
+            <div className="text-white">
+              <h1 className="text-3xl font-semibold">Perfil</h1>
+              <p className="text-yellow-200 text-sm">Gestiona tu información personal</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsEditing(!isEditing)}
+            className="bg-white text-yellow-600 px-4 py-2 rounded-lg shadow-md hover:bg-yellow-50 transition duration-150">
+            {isEditing ? 'Cancelar' : 'Editar'}
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Nombre */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Nombre</label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={userData.firstName}
+                  onChange={handleChange}
+                  disabled={!isEditing}
+                  className={`w-full p-3 border rounded-lg transition duration-150 ${
+                    isEditing
+                      ? 'focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500'
+                      : 'bg-gray-100'
+                  }`}
+                />
+              </div>
+
+              {/* Apellido */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Apellido</label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={userData.lastName}
+                  onChange={handleChange}
+                  disabled={!isEditing}
+                  className={`w-full p-3 border rounded-lg transition duration-150 ${
+                    isEditing
+                      ? 'focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500'
+                      : 'bg-gray-100'
+                  }`}
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={userData.email}
+                  disabled
+                  className="w-full p-3 border rounded-lg bg-gray-100 cursor-not-allowed"
+                />
+              </div>
+
+              {/* Teléfono */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Teléfono</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={userData.phone || ''}
+                  onChange={handleChange}
+                  disabled={!isEditing}
+                  className={`w-full p-3 border rounded-lg transition duration-150 ${
+                    isEditing
+                      ? 'focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500'
+                      : 'bg-gray-100'
+                  }`}
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Apellido
-              </label>
-              <input
-                type="text"
-                name="lastName"
-                value={userData.lastName}
-                onChange={handleChange}
-                disabled={!isEditing}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 disabled:bg-gray-100"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={userData.email}
-                disabled
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Teléfono
-              </label>
-              <input
-                type="tel"
-                name="phone"
-                value={userData.phone || ''}
-                onChange={handleChange}
-                disabled={!isEditing}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500 disabled:bg-gray-100"
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              {!isEditing ? (
+            {/* Save Button */}
+            {isEditing && (
+              <div className="mt-6 flex justify-end">
                 <button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                  type="submit"
+                  disabled={saving || !hasChanges()}
+                  className={`px-6 py-2 bg-yellow-600 text-white rounded-lg shadow-md hover:bg-yellow-700 transition duration-150 ${
+                    saving || !hasChanges() ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
-                  Editar Perfil
+                  {saving ? (
+                    <span className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-white"></div>
+                      Guardando...
+                    </span>
+                  ) : (
+                    'Guardar Cambios'
+                  )}
                 </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-                  >
-                    Guardar Cambios
-                  </button>
-                </>
-              )}
-            </div>
+              </div>
+            )}
           </form>
         </div>
       </div>
