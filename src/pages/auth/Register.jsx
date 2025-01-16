@@ -6,7 +6,9 @@ import { doc, setDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import logoSdlg from '../../assets/logo.png';
 
+
 const Register = () => {
+  // Estados para el formulario y carga
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -19,6 +21,7 @@ const Register = () => {
   const { signup } = useContext(AuthContext);
   const navigate = useNavigate();
 
+  // Manejador de cambios en los campos del formulario
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -27,6 +30,7 @@ const Register = () => {
     }));
   };
 
+  // Manejador del envío del formulario
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
@@ -39,17 +43,18 @@ const Register = () => {
       // Crear usuario en Firebase Auth
       const userCredential = await signup(formData.email, formData.password);
       
-      // Crear documento del usuario en Firestore
+      // Crear documento del usuario en Firestore incluyendo la contraseña
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
         phone: formData.phone,
+        password: formData.password, // ADVERTENCIA: Almacenamiento inseguro de contraseña
         createdAt: new Date().toISOString()
       });
 
       toast.success('Registro exitoso');
-      navigate('/');
+      navigate('/login'); // Redirige al login después de registrarse
     } catch (error) {
       let errorMessage = 'Error al registrar usuario';
       if (error.code === 'auth/email-already-in-use') {
@@ -76,7 +81,7 @@ const Register = () => {
             />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 text-center">
-           Gestión de Préstamos
+            Gestión de Préstamos
           </h1>
           <p className="mt-2 text-sm text-gray-600">
             Crear nueva cuenta
@@ -84,6 +89,7 @@ const Register = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Campos de nombre y apellido */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">
@@ -114,6 +120,7 @@ const Register = () => {
             </div>
           </div>
 
+          {/* Campo de teléfono */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Teléfono
@@ -128,6 +135,7 @@ const Register = () => {
             />
           </div>
 
+          {/* Campo de email */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Correo electrónico
@@ -142,6 +150,7 @@ const Register = () => {
             />
           </div>
 
+          {/* Campo de contraseña */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Contraseña
@@ -156,6 +165,7 @@ const Register = () => {
             />
           </div>
 
+          {/* Campo de confirmar contraseña */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Confirmar Contraseña
@@ -170,6 +180,7 @@ const Register = () => {
             />
           </div>
 
+          {/* Botón de submit */}
           <button
             type="submit"
             disabled={loading}
@@ -186,6 +197,7 @@ const Register = () => {
           </button>
         </form>
 
+        {/* Sección de enlace a login */}
         <div className="mt-6">
           <div className="relative">
             <div className="absolute inset-0 flex items-center">

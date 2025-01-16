@@ -47,6 +47,183 @@ const Loans = () => {
     }).format(amount || 0);
   };
 
+  const calculateLoanDetails = (amount, interestRate, term) => {
+    const principal = parseFloat(amount);
+    const monthlyInterestRate = parseFloat(interestRate) / 100;
+    const months = parseInt(term);
+    
+    const interestPerMonth = principal * monthlyInterestRate;
+    const totalInterest = interestPerMonth * months;
+    const totalPayment = principal + totalInterest;
+    const monthlyPayment = totalPayment / months;
+
+    return {
+      monthlyPayment: monthlyPayment.toFixed(2),
+      totalPayment: totalPayment.toFixed(2),
+      totalInterest: totalInterest.toFixed(2),
+      monthlyInterest: interestPerMonth.toFixed(2)
+    };
+  };
+
+  const calculateIndefiniteLoanDetails = (amount, interestRate, startDate) => {
+    const principal = parseFloat(amount);
+    const monthlyInterestRate = parseFloat(interestRate) / 100;
+    
+    const start = new Date(startDate);
+    const today = new Date();
+    
+    let monthsDiff = (today.getFullYear() - start.getFullYear()) * 12 + 
+                    (today.getMonth() - start.getMonth());
+    
+    if (today.getDate() < start.getDate()) {
+        monthsDiff -= 1;
+    }
+    
+    monthsDiff = Math.max(0, monthsDiff);
+    
+    const interestPerMonth = principal * monthlyInterestRate;
+    const totalInterest = interestPerMonth * monthsDiff;
+    const totalPayment = principal + totalInterest;
+
+    return {
+        monthlyInterest: interestPerMonth.toFixed(2),
+        totalInterest: totalInterest.toFixed(2),
+        totalPayment: totalPayment.toFixed(2),
+        monthsElapsed: monthsDiff
+    };
+  };
+
+  const finalizeLoan = async (loanId) => {
+    try {
+      const loan = loans.find(l => l.id === loanId);
+      if (!loan) return;
+
+      const finalCalculation = calculateIndefiniteLoanDetails(
+        loan.amount,
+        loan.interestRate,
+        loan.startDate
+      );
+
+      await updateDoc(doc(db, 'loans', loanId), {
+        status: 'completed',
+        endDate: new Date().toISOString(),
+        finalTotalPayment: parseFloat(finalCalculation.totalPayment),
+        finalTotalInterest: parseFloat(finalCalculation.totalInterest),
+        monthsElapsed: finalCalculation.monthsElapsed
+      });
+
+      toast.success('Préstamo finalizado exitosamente');
+      fetchData();
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Error al finalizar el préstamo');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!currentUser) return;
+    
+    if (window.confirm('¿Está seguro de eliminar este préstamo?')) {
+      try {
+        await deleteDoc(doc(db, 'loans', id));
+        toast.success('Préstamo eliminado exitosamente');
+        fetchData();
+      } catch (error) {
+        toast.error('Error al eliminar el préstamo');
+      }
+    }
+  };
+
+  const handleEdit = (loan) => {
+    setSelectedLoan(loan);
+    setFormData({
+      debtorId: loan.debtorId,
+      amount: loan.amount.toString(),
+      interestRate: loan.interestRate.toString(),
+      term: loan.term?.toString() || '',
+      isIndefinite: loan.isIndefinite,
+      startDate: loan.startDate?.split('T')[0] || '',
+      description: loan.description || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    try {
+      setLoading(true);
+      let loanDetails;
+
+      if (formData.isIndefinite) {
+        loanDetails = calculateIndefiniteLoanDetails(
+          formData.amount,
+          formData.interestRate,
+          formData.startDate
+        );
+      } else {
+        loanDetails = calculateLoanDetails(
+          formData.amount,
+          formData.interestRate,
+          formData.term
+        );
+      }
+
+      let endDate = null;
+      if (!formData.isIndefinite && formData.term) {
+        const startDateObj = new Date(formData.startDate);
+        const endDateObj = new Date(startDateObj);
+        endDateObj.setMonth(startDateObj.getMonth() + parseInt(formData.term));
+        endDate = endDateObj.toISOString();
+      }
+
+      const loanData = {
+        ...formData,
+        adminId: currentUser.uid,
+        amount: parseFloat(formData.amount),
+        interestRate: parseFloat(formData.interestRate),
+        term: formData.isIndefinite ? null : parseInt(formData.term),
+        monthlyInterest: parseFloat(loanDetails.monthlyInterest),
+        totalInterest: parseFloat(loanDetails.totalInterest),
+        totalPayment: parseFloat(loanDetails.totalPayment),
+        monthlyPayment: formData.isIndefinite ? null : parseFloat(loanDetails.monthlyPayment),
+        status: 'active',
+        remainingAmount: parseFloat(loanDetails.totalPayment),
+        paidAmount: 0,
+        createdAt: new Date().toISOString(),
+        startDate: formData.startDate,
+        endDate: endDate
+      };
+
+      if (selectedLoan) {
+        await updateDoc(doc(db, 'loans', selectedLoan.id), loanData);
+        toast.success('Préstamo actualizado exitosamente');
+      } else {
+        await addDoc(collection(db, 'loans'), loanData);
+        toast.success('Préstamo creado exitosamente');
+      }
+
+      setIsModalOpen(false);
+      setSelectedLoan(null);
+      setFormData({
+        debtorId: '',
+        amount: '',
+        interestRate: '',
+        term: '',
+        isIndefinite: false,
+        startDate: '',
+        description: ''
+      });
+      fetchData();
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Error al procesar el préstamo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [currentUser]);
@@ -88,56 +265,6 @@ const Loans = () => {
       setLoading(false);
     }
   };
-
-  const calculateLoanDetails = (amount, interestRate, term) => {
-    const principal = parseFloat(amount);
-    const monthlyInterestRate = parseFloat(interestRate) / 100;
-    const months = parseInt(term);
-    
-    const interestPerMonth = principal * monthlyInterestRate;
-    const totalInterest = interestPerMonth * months;
-    const totalPayment = principal + totalInterest;
-    const monthlyPayment = totalPayment / months;
-
-    return {
-      monthlyPayment: monthlyPayment.toFixed(2),
-      totalPayment: totalPayment.toFixed(2),
-      totalInterest: totalInterest.toFixed(2),
-      monthlyInterest: interestPerMonth.toFixed(2)
-    };
-  };
-
-  const calculateIndefiniteLoanDetails = (amount, interestRate, startDate) => {
-    const principal = parseFloat(amount);
-    const monthlyInterestRate = parseFloat(interestRate) / 100;
-    
-    // Calcular meses transcurridos desde el inicio hasta hoy
-    const start = new Date(startDate);
-    const today = new Date();
-    
-    let monthsDiff = (today.getFullYear() - start.getFullYear()) * 12 + 
-                    (today.getMonth() - start.getMonth());
-    
-    // Verificar si el día actual es menor al día del inicio del préstamo
-    if (today.getDate() < start.getDate()) {
-        monthsDiff -= 1; // No contar el mes actual
-    }
-    
-    // Evitar valores negativos si la fecha de inicio es en el futuro
-    monthsDiff = Math.max(0, monthsDiff);
-    
-    const interestPerMonth = principal * monthlyInterestRate;
-    const totalInterest = interestPerMonth * monthsDiff;
-    const totalPayment = principal + totalInterest;
-
-    return {
-        monthlyInterest: interestPerMonth.toFixed(2),
-        totalInterest: totalInterest.toFixed(2),
-        totalPayment: totalPayment.toFixed(2),
-        monthsElapsed: monthsDiff
-    };
-  };
-  // Componente para la vista móvil de préstamos
   const LoanCard = ({ loan, onFinalize, onEdit, onDelete }) => (
     <div className="bg-white rounded-lg shadow-md p-4 mb-4">
       <div className="flex justify-between items-center mb-3">
@@ -209,130 +336,6 @@ const Loans = () => {
     </div>
   );
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!currentUser) return;
-
-    try {
-      setLoading(true);
-      let loanDetails;
-
-      if (formData.isIndefinite) {
-        loanDetails = calculateIndefiniteLoanDetails(
-          formData.amount,
-          formData.interestRate,
-          formData.startDate
-        );
-      } else {
-        loanDetails = calculateLoanDetails(
-          formData.amount,
-          formData.interestRate,
-          formData.term
-        );
-      }
-
-      const loanData = {
-        ...formData,
-        adminId: currentUser.uid,
-        amount: parseFloat(formData.amount),
-        interestRate: parseFloat(formData.interestRate),
-        term: formData.isIndefinite ? null : parseInt(formData.term),
-        monthlyInterest: parseFloat(loanDetails.monthlyInterest),
-        totalInterest: parseFloat(loanDetails.totalInterest),
-        totalPayment: parseFloat(loanDetails.totalPayment),
-        monthlyPayment: formData.isIndefinite ? null : parseFloat(loanDetails.monthlyPayment),
-        status: 'active',
-        remainingAmount: parseFloat(loanDetails.totalPayment),
-        paidAmount: 0,
-        createdAt: new Date().toISOString(),
-        startDate: formData.startDate,
-        endDate: formData.isIndefinite ? null : new Date(formData.startDate).setMonth(
-          new Date(formData.startDate).getMonth() + (formData.term ? parseInt(formData.term) : 0)
-        ).toISOString()
-      };
-
-      if (selectedLoan) {
-        await updateDoc(doc(db, 'loans', selectedLoan.id), loanData);
-        toast.success('Préstamo actualizado exitosamente');
-      } else {
-        await addDoc(collection(db, 'loans'), loanData);
-        toast.success('Préstamo creado exitosamente');
-      }
-
-      setIsModalOpen(false);
-      setSelectedLoan(null);
-      setFormData({
-        debtorId: '',
-        amount: '',
-        interestRate: '',
-        term: '',
-        isIndefinite: false,
-        startDate: '',
-        description: ''
-      });
-      fetchData();
-    } catch (error) {
-      console.error('Error:', error);
-      toast.error('Error al procesar el préstamo');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const finalizeLoan = async (loanId) => {
-    try {
-      const loan = loans.find(l => l.id === loanId);
-      if (!loan) return;
-
-      const finalCalculation = calculateIndefiniteLoanDetails(
-        loan.amount,
-        loan.interestRate,
-        loan.startDate
-      );
-
-      await updateDoc(doc(db, 'loans', loanId), {
-        status: 'completed',
-        endDate: new Date().toISOString(),
-        finalTotalPayment: parseFloat(finalCalculation.totalPayment),
-        finalTotalInterest: parseFloat(finalCalculation.totalInterest),
-        monthsElapsed: finalCalculation.monthsElapsed
-      });
-
-      toast.success('Préstamo finalizado exitosamente');
-      fetchData();
-    } catch (error) {
-      console.error('Error:', error);
-      toast.error('Error al finalizar el préstamo');
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!currentUser) return;
-    
-    if (window.confirm('¿Está seguro de eliminar este préstamo?')) {
-      try {
-        await deleteDoc(doc(db, 'loans', id));
-        toast.success('Préstamo eliminado exitosamente');
-        fetchData();
-      } catch (error) {
-        toast.error('Error al eliminar el préstamo');
-      }
-    }
-  };
-
-  const handleEdit = (loan) => {
-    setSelectedLoan(loan);
-    setFormData({
-      debtorId: loan.debtorId,
-      amount: loan.amount.toString(),
-      interestRate: loan.interestRate.toString(),
-      term: loan.term?.toString() || '',
-      isIndefinite: loan.isIndefinite,
-      startDate: loan.startDate?.split('T')[0] || '',
-      description: loan.description || ''
-    });
-    setIsModalOpen(true);
-  };
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -561,6 +564,7 @@ const Loans = () => {
                   rows="3"
                 />
               </div>
+
 
               {/* Resumen del Préstamo */}
               {formData.amount && formData.interestRate && (formData.term || formData.isIndefinite) && (

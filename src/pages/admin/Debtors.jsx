@@ -14,6 +14,69 @@ import {
 import { Search, Add, Edit, Delete, WhatsApp } from '@mui/icons-material';
 import toast from 'react-hot-toast';
 
+// Componente FormModal separado
+const FormModal = ({ isOpen, onClose, onSubmit, formData, setFormData, loading, selectedDebtor }) => {
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(e);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg p-8 max-w-md w-full">
+        <h2 className="text-xl font-bold mb-4">
+          {selectedDebtor ? 'Editar Deudor' : 'Nuevo Deudor'}
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Nombre Completo
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Teléfono
+            </label>
+            <input
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
+              required
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700"
+            >
+              {loading ? 'Guardando...' : (selectedDebtor ? 'Actualizar' : 'Guardar')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const Debtors = () => {
   const { currentUser } = useContext(AuthContext);
   const [debtors, setDebtors] = useState([]);
@@ -179,6 +242,16 @@ const Debtors = () => {
     }
   };
 
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setSelectedDebtor(null);
+    setFormData({
+      name: '',
+      phone: '',
+      identification: ''
+    });
+  };
+
   // JSX para el modal de WhatsApp
   const WhatsAppModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -216,70 +289,6 @@ const Debtors = () => {
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-
-  // JSX para el modal de formulario
-  const FormModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md w-full">
-        <h2 className="text-xl font-bold mb-4">
-          {selectedDebtor ? 'Editar Deudor' : 'Nuevo Deudor'}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Nombre Completo
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Teléfono
-            </label>
-            <input
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-              required
-            />
-          </div>
-
-          
-
-          <div className="flex justify-end space-x-3 mt-6">
-            <button
-              type="button"
-              onClick={() => {
-                setIsModalOpen(false);
-                setSelectedDebtor(null);
-                setFormData({
-                  name: '',
-                  phone: '',
-                  identification: ''
-                });
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700"
-            >
-              {loading ? 'Guardando...' : (selectedDebtor ? 'Actualizar' : 'Guardar')}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );
@@ -407,7 +416,15 @@ const Debtors = () => {
       {isWhatsAppModalOpen && selectedDebtor && <WhatsAppModal />}
 
       {/* Modal de Formulario */}
-      {isModalOpen && <FormModal />}
+      <FormModal 
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        onSubmit={handleSubmit}
+        formData={formData}
+        setFormData={setFormData}
+        loading={loading}
+        selectedDebtor={selectedDebtor}
+      />
     </div>
   );
 };
