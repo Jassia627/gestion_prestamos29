@@ -169,99 +169,123 @@ useEffect(() => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <h1 className="text-3xl font-bold text-gray-800 mb-8">Panel de Control Financiero</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {/* Capital Prestado */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <AttachMoney className="text-yellow-600 mr-4 text-4xl" />
+        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-sm">Capital Prestado</p>
-              <p className="text-2xl font-bold text-yellow-600">
+              <p className="text-sm font-medium text-yellow-600 uppercase tracking-wide">Capital Prestado</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">
                 {formatMoney(stats.capitalPrestado)}
               </p>
-              <p className="text-sm text-gray-500">Sin intereses</p>
+              <div className="mt-2 flex items-center text-sm text-yellow-700">
+                <AttachMoney className="w-4 h-4 mr-1" />
+                <span>Sin intereses</span>
+              </div>
+            </div>
+            <div className="bg-yellow-100 p-4 rounded-lg">
+              <AttachMoney className="text-yellow-600 text-3xl" />
             </div>
           </div>
         </div>
 
-        {/* Intereses */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <Calculate className="text-green-600 mr-4 text-4xl" />
+        {/* Intereses Totales */}
+        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-sm">Total Intereses</p>
-              <p className="text-2xl font-bold text-green-600">
+              <p className="text-sm font-medium text-green-600 uppercase tracking-wide">Intereses Totales</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">
                 {formatMoney(stats.interesesTotales)}
               </p>
-              <p className="text-sm text-green-500">
-                Cobrados: {formatMoney(stats.interesesGanados)}
-              </p>
+              <div className="mt-2 flex items-center text-sm text-green-700">
+                <TrendingUp className="w-4 h-4 mr-1" />
+                <span>Cobrados: {formatMoney(stats.interesesGanados)}</span>
+              </div>
+            </div>
+            <div className="bg-green-100 p-4 rounded-lg">
+              <Calculate className="text-green-600 text-3xl" />
             </div>
           </div>
         </div>
 
         {/* Total con Intereses */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <AccountBalance className="text-blue-600 mr-4 text-4xl" />
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-sm">Total</p>
-              <p className="text-2xl font-bold text-blue-600">
+              <p className="text-sm font-medium text-blue-600 uppercase tracking-wide">Total Esperado</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">
                 {formatMoney(stats.capitalPrestado + stats.interesesTotales)}
               </p>
-              <p className="text-sm text-gray-500">Capital + Intereses</p>
+              <div className="mt-2 flex items-center text-sm text-blue-700">
+                <AccountBalance className="w-4 h-4 mr-1" />
+                <span>Capital + Intereses</span>
+              </div>
+            </div>
+            <div className="bg-blue-100 p-4 rounded-lg">
+              <AccountBalance className="text-blue-600 text-3xl" />
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Segunda fila */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Préstamos Activos */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <CheckCircle className="text-green-600 mr-4 text-4xl" />
+        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-sm">Préstamos Activos</p>
-              <p className="text-2xl font-bold text-green-600">
+              <p className="text-sm font-medium text-emerald-600 uppercase tracking-wide">Préstamos Activos</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">
                 {stats.prestamosActivos}
               </p>
-              <p className="text-sm text-gray-500">En curso</p>
+              <div className="mt-2 flex items-center text-sm text-emerald-700">
+                <CheckCircle className="w-4 h-4 mr-1" />
+                <span>En buen estado</span>
+              </div>
+            </div>
+            <div className="bg-emerald-100 p-4 rounded-lg">
+              <CheckCircle className="text-emerald-600 text-3xl" />
             </div>
           </div>
         </div>
 
         {/* Préstamos Vencidos */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <Warning className="text-red-600 mr-4 text-4xl" />
+        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-sm">Préstamos Vencidos</p>
-              <p className="text-2xl font-bold text-red-600">
+              <p className="text-sm font-medium text-red-600 uppercase tracking-wide">Préstamos Vencidos</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">
                 {stats.prestamosVencidos}
               </p>
-              <p className="text-sm text-gray-500">Atrasados</p>
+              <div className="mt-2 flex items-center text-sm text-red-700">
+                <Warning className="w-4 h-4 mr-1" />
+                <span>Requieren atención</span>
+              </div>
+            </div>
+            <div className="bg-red-100 p-4 rounded-lg">
+              <Warning className="text-red-600 text-3xl" />
             </div>
           </div>
         </div>
 
         {/* Intereses Cobrados */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <TrendingUp className="text-purple-600 mr-4 text-4xl" />
+        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-sm">Intereses Cobrados</p>
-              <p className="text-2xl font-bold text-purple-600">
+              <p className="text-sm font-medium text-purple-600 uppercase tracking-wide">Intereses Cobrados</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">
                 {formatMoney(stats.interesesGanados)}
               </p>
-              <p className="text-sm text-gray-500">Ya pagados</p>
+              <div className="mt-2 flex items-center text-sm text-purple-700">
+                <TrendingUp className="w-4 h-4 mr-1" />
+                <span>Ganancias realizadas</span>
+              </div>
+            </div>
+            <div className="bg-purple-100 p-4 rounded-lg">
+              <TrendingUp className="text-purple-600 text-3xl" />
             </div>
           </div>
         </div>
       </div>
-
-      {/* Sección de Debug - Solo visible en desarrollo */}
-     
     </div>
   );
 };

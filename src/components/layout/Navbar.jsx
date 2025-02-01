@@ -29,7 +29,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-yellow-400 shadow-lg">
+    <nav className="bg-yellow-400 shadow-lg fixed w-full z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
@@ -45,10 +45,10 @@ const Navbar = () => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200
                       ${
                         location.pathname === item.path
-                          ? "text-red-600 bg-yellow-200"
+                          ? "text-red-600 bg-yellow-200 shadow-sm"
                           : "text-black hover:text-red-600 hover:bg-yellow-200"
                       }`}
                   >
@@ -58,7 +58,7 @@ const Navbar = () => {
                 ))}
                 <button
                   onClick={handleLogout}
-                  className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors text-black hover:text-red-600 hover:bg-yellow-200"
+                  className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-black hover:text-red-600 hover:bg-yellow-200"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
                   Cerrar Sesión
@@ -67,7 +67,7 @@ const Navbar = () => {
 
               <div className="md:hidden flex items-center">
                 <button
-                  className="text-black hover:text-red-600 p-2"
+                  className="text-black hover:text-red-600 p-2 transition-colors duration-200"
                   onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 >
                   {isMobileMenuOpen ? (
@@ -90,7 +90,7 @@ const Navbar = () => {
         >
           <div className="flex justify-end p-4">
             <button
-              className="text-black hover:text-red-600"
+              className="text-black hover:text-red-600 transition-colors duration-200"
               onClick={() => setIsMobileMenuOpen(false)}
             >
               <X className="h-6 w-6" />
@@ -101,10 +101,10 @@ const Navbar = () => {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium w-full
+                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium w-full transition-colors duration-200
                   ${
                     location.pathname === item.path
-                      ? "text-red-600 bg-yellow-200"
+                      ? "text-red-600 bg-yellow-200 shadow-sm"
                       : "text-black hover:text-red-600 hover:bg-yellow-200"
                   }`}
                 onClick={() => setIsMobileMenuOpen(false)}
@@ -115,7 +115,7 @@ const Navbar = () => {
             ))}
             <Link
               to="/profile"
-              className="flex items-center px-3 py-2 rounded-md text-sm font-medium w-full text-black hover:text-red-600 hover:bg-yellow-200"
+              className="flex items-center px-3 py-2 rounded-md text-sm font-medium w-full text-black hover:text-red-600 hover:bg-yellow-200 transition-colors duration-200"
               onClick={() => setIsMobileMenuOpen(false)}
             >
               <User className="mr-2 h-4 w-4" />
@@ -126,7 +126,7 @@ const Navbar = () => {
                 handleLogout();
                 setIsMobileMenuOpen(false);
               }}
-              className="flex items-center px-3 py-2 rounded-md text-sm font-medium w-full text-black hover:text-red-600 hover:bg-yellow-200"
+              className="flex items-center px-3 py-2 rounded-md text-sm font-medium w-full text-black hover:text-red-600 hover:bg-yellow-200 transition-colors duration-200"
             >
               <LogOut className="mr-2 h-4 w-4" />
               Cerrar Sesión
@@ -138,7 +138,7 @@ const Navbar = () => {
       {/* Overlay for mobile menu */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-40"
+          className="fixed inset-0 bg-black bg-opacity-30 md:hidden z-40 transition-opacity duration-300"
           onClick={() => setIsMobileMenuOpen(false)}
         ></div>
       )}

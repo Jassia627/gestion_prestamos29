@@ -17,7 +17,8 @@ import {
   Delete, 
   AttachMoney,
   CalendarToday,
-  CheckCircle 
+  CheckCircle,
+  Close
 } from '@mui/icons-material';
 import toast from 'react-hot-toast';
 
@@ -265,73 +266,72 @@ const Loans = () => {
       setLoading(false);
     }
   };
+
   const LoanCard = ({ loan, onFinalize, onEdit, onDelete }) => (
-    <div className="bg-white rounded-lg shadow-md p-4 mb-4">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-lg font-semibold">{loan.debtorName}</h3>
-        <span className={`px-2 py-1 rounded-full text-xs font-semibold
-          ${loan.status === 'active' ? 'bg-green-100 text-green-800' : 
-          loan.status === 'completed' ? 'bg-blue-100 text-blue-800' : 
-          'bg-red-100 text-red-800'}`}>
+    <div className="bg-white rounded-xl shadow-lg p-5 mb-4 border border-gray-100 hover:shadow-xl transition-shadow">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h3 className="text-xl font-bold text-gray-800">{loan.debtorName}</h3>
+          <p className="text-sm text-gray-500">
+            <CalendarToday className="inline mr-1" fontSize="small" />
+            {new Date(loan.startDate).toLocaleDateString()}
+          </p>
+        </div>
+        <span className={`px-3 py-1 rounded-full text-sm font-semibold
+          ${loan.status === 'active' ? 'bg-green-100 text-green-700' : 
+          loan.status === 'completed' ? 'bg-blue-100 text-blue-700' : 
+          'bg-red-100 text-red-700'}`}>
           {loan.status === 'active' ? 'Activo' : 
            loan.status === 'completed' ? 'Completado' : 'Vencido'}
         </span>
       </div>
       
-      <div className="space-y-2">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Monto:</span>
-          <span className="font-medium">{formatMoney(loan.amount)}</span>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="bg-gray-50 p-3 rounded-lg">
+          <p className="text-xs text-gray-500 uppercase mb-1">Monto</p>
+          <p className="font-semibold text-gray-800">{formatMoney(loan.amount)}</p>
         </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Interés:</span>
-          <span className="font-medium">{loan.interestRate}% mensual</span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Plazo:</span>
-          <span className="font-medium">
-            {loan.isIndefinite ? 'Indefinido' : `${loan.term} meses`}
-          </span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Cuota Mensual:</span>
-          <span className="font-medium">
-            {loan.isIndefinite 
-              ? formatMoney(loan.monthlyInterest)
-              : formatMoney(loan.monthlyPayment)}
-          </span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Total:</span>
-          <span className="font-medium">{formatMoney(loan.totalPayment)}</span>
+        <div className="bg-gray-50 p-3 rounded-lg">
+          <p className="text-xs text-gray-500 uppercase mb-1">Total a pagar</p>
+          <p className="font-semibold text-yellow-600">{formatMoney(loan.totalPayment)}</p>
         </div>
       </div>
 
-      <div className="mt-4 flex justify-end space-x-2">
-        {loan.isIndefinite && loan.status === 'active' && (
+      <div className="flex items-center justify-between border-t pt-4">
+        <div className="space-x-2">
+          {loan.isIndefinite && loan.status === 'active' && (
+            <button
+              onClick={() => onFinalize(loan.id)}
+              className="text-green-600 hover:text-green-800 tooltip"
+              data-tip="Finalizar préstamo"
+            >
+              <CheckCircle fontSize="medium" />
+            </button>
+          )}
           <button
-            onClick={() => onFinalize(loan.id)}
-            className="p-2 text-green-600 hover:text-green-900"
+            onClick={() => onEdit(loan)}
+            className="text-blue-600 hover:text-blue-800 tooltip"
+            data-tip="Editar préstamo"
           >
-            <CheckCircle />
+            <Edit fontSize="medium" />
           </button>
-        )}
-        <button
-          onClick={() => onEdit(loan)}
-          className="p-2 text-blue-600 hover:text-blue-900"
-        >
-          <Edit />
-        </button>
-        <button
-          onClick={() => onDelete(loan.id)}
-          className="p-2 text-red-600 hover:text-red-900"
-        >
-          <Delete />
-        </button>
+          <button
+            onClick={() => onDelete(loan.id)}
+            className="text-red-600 hover:text-red-800 tooltip"
+            data-tip="Eliminar préstamo"
+          >
+            <Delete fontSize="medium" />
+          </button>
+        </div>
+        <div className="text-right">
+          <p className="text-sm text-gray-600">
+            {loan.isIndefinite ? (
+              <span>Interés mensual: {formatMoney(loan.monthlyInterest)}</span>
+            ) : (
+              <span>Cuota: {formatMoney(loan.monthlyPayment)}/mes</span>
+            )}
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -346,8 +346,11 @@ const Loans = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Gestión de Préstamos</h1>
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+        <h1 className="text-3xl font-bold text-gray-900">
+          <AttachMoney className="inline mr-2 text-yellow-600" fontSize="large" />
+          Gestión de Préstamos
+        </h1>
         <button
           onClick={() => {
             setSelectedLoan(null);
@@ -362,7 +365,7 @@ const Loans = () => {
             });
             setIsModalOpen(true);
           }}
-          className="bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center"
+          className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center shadow-md"
         >
           <Add className="mr-2" /> Nuevo Préstamo
         </button>
@@ -382,279 +385,310 @@ const Loans = () => {
       </div>
 
       {/* Vista desktop */}
-      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
+      <div className="hidden md:block bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full">
+            <thead className="bg-yellow-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deudor</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interés</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plazo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cuota Mensual</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Deudor</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Monto</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Interés</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Plazo</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Cuota</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Total</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-yellow-700 uppercase">Estado</th>
+                <th className="px-6 py-4 text-right text-sm font-semibold text-yellow-700 uppercase">Acciones</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200">
               {loans.map((loan) => (
                 <tr key={loan.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {loan.debtorName}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="ml-4">
+                        <div className="font-medium text-gray-900">{loan.debtorName}</div>
+                        <div className="text-sm text-gray-500">
+                          {new Date(loan.startDate).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">
                     {formatMoney(loan.amount)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {loan.interestRate}% mensual
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+                    <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">
+                      {loan.interestRate}%
+                    </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {loan.isIndefinite ? 'Indefinido' : `${loan.term} meses`}
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+                    {loan.isIndefinite ? (
+                      <span className="italic">Indefinido</span>
+                    ) : (
+                      `${loan.term} meses`
+                    )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">
                     {loan.isIndefinite 
                       ? formatMoney(loan.monthlyInterest) 
                       : formatMoney(loan.monthlyPayment)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-semibold text-yellow-600">
                     {formatMoney(loan.totalPayment)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                      ${loan.status === 'active' ? 'bg-green-100 text-green-800' : 
-                      loan.status === 'completed' ? 'bg-blue-100 text-blue-800' : 
-                      'bg-red-100 text-red-800'}`}>
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold
+                      ${loan.status === 'active' ? 'bg-green-100 text-green-700' : 
+                      loan.status === 'completed' ? 'bg-blue-100 text-blue-700' : 
+                      'bg-red-100 text-red-700'}`}>
                       {loan.status === 'active' ? 'Activo' : 
                        loan.status === 'completed' ? 'Completado' : 'Vencido'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <td className="px-6 py-4 whitespace-nowrap text-right space-x-3">
                     {loan.isIndefinite && loan.status === 'active' && (
                       <button
                         onClick={() => finalizeLoan(loan.id)}
-                        className="text-green-600 hover:text-green-900 mr-4"
+                        className="text-green-600 hover:text-green-800 tooltip"
+                        data-tip="Finalizar préstamo"
                       >
-                        <CheckCircle />
+                        <CheckCircle fontSize="medium" />
                       </button>
                     )}
                     <button
                       onClick={() => handleEdit(loan)}
-                      className="text-blue-600 hover:text-blue-900 mr-4"
+                      className="text-blue-600 hover:text-blue-800 tooltip"
+                      data-tip="Editar préstamo"
                     >
-                      <Edit />
+                      <Edit fontSize="medium" />
                     </button>
                     <button
                       onClick={() => handleDelete(loan.id)}
-                      className="text-red-600 hover:text-red-900"
+                      className="text-red-600 hover:text-red-800 tooltip"
+                      data-tip="Eliminar préstamo"
                     >
-                      <Delete />
+                      <Delete fontSize="medium" />
                     </button>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modal de Préstamo */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-8 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">
-              {selectedLoan ? 'Editar Préstamo' : 'Nuevo Préstamo'}
-            </h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Deudor</label>
-                <select
-                  value={formData.debtorId}
-                  onChange={(e) => setFormData({ ...formData, debtorId: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  required
-                >
-                  <option value="">Seleccione un deudor</option>
-                  {debtors.map((debtor) => (
-                    <option key={debtor.id} value={debtor.id}>{debtor.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Monto del Préstamo
-                </label>
-                <div className="mt-1 relative rounded-md shadow-sm">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">$</span>
-                  </div>
-                  <input
-                    type="number"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="mt-1 block w-full pl-7 rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Tasa de Interés Mensual (%)
-                </label>
-                <input
-                  type="number"
-                  value={formData.interestRate}
-                  onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  required
-                  step="0.01"
-                />
-              </div>
-
-              <div>
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.isIndefinite}
-                    onChange={(e) => setFormData({ ...formData, isIndefinite: e.target.checked })}
-                    className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Préstamo Indefinido</span>
-                </label>
-              </div>
-
-              {!formData.isIndefinite && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Plazo (meses)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.term}
-                    onChange={(e) => setFormData({ ...formData, term: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                    required={!formData.isIndefinite}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Fecha de Inicio
-                </label>
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Descripción
-                </label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
-                  rows="3"
-                />
-              </div>
-
-
-              {/* Resumen del Préstamo */}
-              {formData.amount && formData.interestRate && (formData.term || formData.isIndefinite) && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-semibold mb-3">Resumen del Préstamo</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Capital:</span>
-                      <span className="font-medium">
-                        {formatMoney(parseFloat(formData.amount))}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Interés Mensual:</span>
-                      <span className="font-medium text-blue-600">
-                        {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100))}
-                      </span>
-                    </div>
-                    {!formData.isIndefinite && (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Total Intereses:</span>
-                          <span className="font-medium text-blue-600">
-                            {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term))}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Total a Pagar:</span>
-                          <span className="font-medium text-green-600">
-                            {formatMoney(
-                              parseFloat(formData.amount) + 
-                              (parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term))
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Cuota Mensual:</span>
-                          <span className="font-medium text-yellow-600">
-                            {formatMoney(
-                              (parseFloat(formData.amount) + 
-                              (parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term)))
-                              / parseInt(formData.term)
-                            )}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                    {formData.isIndefinite && (
-                      <div className="mt-2 p-2 bg-yellow-50 rounded text-sm text-yellow-800">
-                        Este es un préstamo indefinido. Se calculará un interés mensual fijo de {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100))} hasta que se finalice el préstamo.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setSelectedLoan(null);
-                    setFormData({
-                      debtorId: '',
-                      amount: '',
-                      interestRate: '',
-                      term: '',
-                      isIndefinite: false,
-                      startDate: '',
-                      description: ''
-                    });
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-                >
-                  {loading ? 'Guardando...' : (selectedLoan ? 'Actualizar' : 'Crear')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default Loans;
+                           ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     </div>
+               
+                   {/* Modal de Préstamo */}
+                     {isModalOpen && (
+                       <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50">
+                         <div className="bg-white rounded-2xl p-4 sm:p-8 max-w-2xl w-full max-h-[95vh] overflow-y-auto shadow-2xl">
+                           <div className="flex justify-between items-center mb-4 sm:mb-6 sticky top-0 bg-white pt-2 pb-4 border-b">
+                             <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                               {selectedLoan ? 'Editar Préstamo' : 'Nuevo Préstamo'}
+                             </h2>
+                             <button
+                               onClick={() => setIsModalOpen(false)}
+                               className="text-gray-400 hover:text-gray-600"
+                             >
+                               <Close fontSize="medium" />
+                             </button>
+                           </div>
+                           
+                           <form onSubmit={handleSubmit} className="space-y-6">
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                               {/* Campo: Deudor */}
+                               <div className="col-span-2">
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">Deudor</label>
+                                 <select
+                                   value={formData.debtorId}
+                                   onChange={(e) => setFormData({ ...formData, debtorId: e.target.value })}
+                                   className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                   required
+                                 >
+                                   <option value="">Seleccione un deudor</option>
+                                   {debtors.map((debtor) => (
+                                     <option key={debtor.id} value={debtor.id}>{debtor.name}</option>
+                                   ))}
+                                 </select>
+                               </div>
+               
+                               {/* Campo: Monto del Préstamo */}
+                               <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                                   Monto del Préstamo
+                                 </label>
+                                 <div className="relative">
+                                   <span className="absolute left-3 top-3 text-gray-500">$</span>
+                                   <input
+                                     type="number"
+                                     value={formData.amount}
+                                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                                     className="w-full pl-8 pr-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                     placeholder="Ej: 1,000,000"
+                                     required
+                                   />
+                                 </div>
+                               </div>
+               
+                               {/* Campo: Tasa de Interés Mensual */}
+                               <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                                   Tasa de Interés Mensual (%)
+                                 </label>
+                                 <div className="relative">
+                                   <span className="absolute right-3 top-3 text-gray-500">%</span>
+                                   <input
+                                     type="number"
+                                     value={formData.interestRate}
+                                     onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
+                                     className="w-full pr-8 pl-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                     placeholder="Ej: 5"
+                                     required
+                                     step="0.01"
+                                   />
+                                 </div>
+                               </div>
+               
+                               {/* Campo: Préstamo Indefinido */}
+                               <div className="col-span-2">
+                                 <label className="flex items-center space-x-2">
+                                   <input
+                                     type="checkbox"
+                                     checked={formData.isIndefinite}
+                                     onChange={(e) => setFormData({ ...formData, isIndefinite: e.target.checked })}
+                                     className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                                   />
+                                   <span className="text-sm font-medium text-gray-700">Préstamo Indefinido</span>
+                                 </label>
+                               </div>
+               
+                               {/* Campo: Plazo (si no es indefinido) */}
+                               {!formData.isIndefinite && (
+                                 <div>
+                                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                                     Plazo (meses)
+                                   </label>
+                                   <input
+                                     type="number"
+                                     value={formData.term}
+                                     onChange={(e) => setFormData({ ...formData, term: e.target.value })}
+                                     className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                     required={!formData.isIndefinite}
+                                   />
+                                 </div>
+                               )}
+               
+                               {/* Campo: Fecha de Inicio */}
+                               <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                                   Fecha de Inicio
+                                 </label>
+                                 <input
+                                   type="date"
+                                   value={formData.startDate}
+                                   onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                   className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                   required
+                                 />
+                               </div>
+               
+                               {/* Campo: Descripción */}
+                               <div className="col-span-2">
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                                   Descripción
+                                 </label>
+                                 <textarea
+                                   value={formData.description}
+                                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                   className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                   rows="3"
+                                   placeholder="Ej: Préstamo para negocio de alimentos"
+                                 />
+                               </div>
+                             </div>
+               
+                             {/* Resumen del Préstamo */}
+                             {formData.amount && formData.interestRate && (formData.term || formData.isIndefinite) && (
+                               <div className="bg-gray-50 p-4 rounded-lg">
+                                 <h3 className="text-sm font-semibold mb-3">Resumen del Préstamo</h3>
+                                 <div className="space-y-2 text-sm">
+                                   <div className="flex justify-between">
+                                     <span className="text-gray-600">Capital:</span>
+                                     <span className="font-medium">
+                                       {formatMoney(parseFloat(formData.amount))}
+                                     </span>
+                                   </div>
+                                   <div className="flex justify-between">
+                                     <span className="text-gray-600">Interés Mensual:</span>
+                                     <span className="font-medium text-blue-600">
+                                       {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100))}
+                                     </span>
+                                   </div>
+                                   {!formData.isIndefinite && (
+                                     <>
+                                       <div className="flex justify-between">
+                                         <span className="text-gray-600">Total Intereses:</span>
+                                         <span className="font-medium text-blue-600">
+                                           {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term))}
+                                         </span>
+                                       </div>
+                                       <div className="flex justify-between">
+                                         <span className="text-gray-600">Total a Pagar:</span>
+                                         <span className="font-medium text-green-600">
+                                           {formatMoney(
+                                             parseFloat(formData.amount) + 
+                                             (parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term))
+                                           )}
+                                         </span>
+                                       </div>
+                                       <div className="flex justify-between">
+                                         <span className="text-gray-600">Cuota Mensual:</span>
+                                         <span className="font-medium text-yellow-600">
+                                           {formatMoney(
+                                             (parseFloat(formData.amount) + 
+                                             (parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term)))
+                                             / parseInt(formData.term)
+                                           )}
+                                         </span>
+                                       </div>
+                                     </>
+                                   )}
+                                   {formData.isIndefinite && (
+                                     <div className="mt-2 p-2 bg-yellow-50 rounded text-sm text-yellow-800">
+                                       Este es un préstamo indefinido. Se calculará un interés mensual fijo de {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100))} hasta que se finalice el préstamo.
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                             )}
+               
+                             {/* Botones del Modal */}
+                             <div className="flex justify-end space-x-4 mt-6">
+                               <button
+                                 type="button"
+                                 onClick={() => setIsModalOpen(false)}
+                                 className="px-6 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                               >
+                                 Cancelar
+                               </button>
+                               <button
+                                 type="submit"
+                                 disabled={loading}
+                                 className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+                               >
+                                 {loading ? (
+                                   <div className="flex items-center">
+                                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                                     Procesando...
+                                   </div>
+                                 ) : selectedLoan ? 'Actualizar Préstamo' : 'Crear Préstamo'}
+                               </button>
+                             </div>
+                           </form>
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 );
+               };
+               
+               export default Loans;

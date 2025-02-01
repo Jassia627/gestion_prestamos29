@@ -14,61 +14,80 @@ import {
 import { Search, Add, Edit, Delete, WhatsApp } from '@mui/icons-material';
 import toast from 'react-hot-toast';
 
-// Componente FormModal separado
 const FormModal = ({ isOpen, onClose, onSubmit, formData, setFormData, loading, selectedDebtor }) => {
-  if (!isOpen) return null;
-
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit(e);
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md w-full">
-        <h2 className="text-xl font-bold mb-4">
-          {selectedDebtor ? 'Editar Deudor' : 'Nuevo Deudor'}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Nombre Completo
-            </label>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">
+            {selectedDebtor ? 'Editar Deudor' : 'Nuevo Deudor'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-600">Nombre Completo</label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
               required
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Teléfono
-            </label>
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-600">Teléfono</label>
             <input
               type="tel"
               value={formData.phone}
               onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
               required
             />
           </div>
 
-          <div className="flex justify-end space-x-3 mt-6">
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-600">Identificación (Opcional)</label>
+            <input
+              type="text"
+              value={formData.identification}
+              onChange={(e) => setFormData(prev => ({ ...prev, identification: e.target.value }))}
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="px-5 py-2.5 text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700"
+              className="px-5 py-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium"
             >
-              {loading ? 'Guardando...' : (selectedDebtor ? 'Actualizar' : 'Guardar')}
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Guardando...
+                </div>
+              ) : selectedDebtor ? 'Actualizar' : 'Crear Deudor'}
             </button>
           </div>
         </form>
@@ -93,7 +112,53 @@ const Debtors = () => {
     identification: ''
   });
 
-  // Función para filtrar deudores
+  useEffect(() => {
+    const fetchDebtors = async () => {
+      if (!currentUser) return;
+
+      try {
+        setLoading(true);
+        const q = query(
+          collection(db, 'debtors'),
+          where('adminId', '==', currentUser.uid)
+        );
+        const querySnapshot = await getDocs(q);
+        const debtorsData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          totalPrestado: 0,
+          prestamosActivos: 0
+        }));
+
+        const loansQuery = query(
+          collection(db, 'loans'),
+          where('adminId', '==', currentUser.uid)
+        );
+        const loansSnapshot = await getDocs(loansQuery);
+        
+        loansSnapshot.docs.forEach(doc => {
+          const loan = doc.data();
+          const debtor = debtorsData.find(d => d.id === loan.debtorId);
+          if (debtor) {
+            debtor.totalPrestado += Number(loan.amount) || 0;
+            if (loan.status === 'active') {
+              debtor.prestamosActivos++;
+            }
+          }
+        });
+
+        setDebtors(debtorsData);
+        setFilteredDebtors(debtorsData);
+      } catch (error) {
+        toast.error('Error al cargar los deudores');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDebtors();
+  }, [currentUser]);
+
   const filterDebtors = (searchText) => {
     const filtered = debtors.filter(debtor => 
       debtor.name.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -103,57 +168,6 @@ const Debtors = () => {
     setFilteredDebtors(filtered);
   };
 
-  // Cargar deudores
-  useEffect(() => {
-    fetchDebtors();
-  }, [currentUser]);
-
-  const fetchDebtors = async () => {
-    if (!currentUser) return;
-
-    try {
-      setLoading(true);
-      const q = query(
-        collection(db, 'debtors'),
-        where('adminId', '==', currentUser.uid)
-      );
-      const querySnapshot = await getDocs(q);
-      const debtorsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        totalPrestado: 0,
-        prestamosActivos: 0
-      }));
-
-      // Cargar préstamos para cada deudor
-      const loansQuery = query(
-        collection(db, 'loans'),
-        where('adminId', '==', currentUser.uid)
-      );
-      const loansSnapshot = await getDocs(loansQuery);
-      
-      loansSnapshot.docs.forEach(doc => {
-        const loan = doc.data();
-        const debtor = debtorsData.find(d => d.id === loan.debtorId);
-        if (debtor) {
-          debtor.totalPrestado += Number(loan.amount) || 0;
-          if (loan.status === 'active') {
-            debtor.prestamosActivos++;
-          }
-        }
-      });
-
-      setDebtors(debtorsData);
-      setFilteredDebtors(debtorsData);
-    } catch (error) {
-      console.error('Error:', error);
-      toast.error('Error al cargar los deudores');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Funciones para WhatsApp
   const openWhatsAppModal = (debtor) => {
     setSelectedDebtor(debtor);
     setWhatsappMessage(`Hola ${debtor.name}, le recordamos que tiene un saldo pendiente de pago.`);
@@ -176,7 +190,6 @@ const Debtors = () => {
     setWhatsappMessage('');
   };
 
-  // Funciones CRUD
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -186,7 +199,7 @@ const Debtors = () => {
       if (!phoneNumber.startsWith('57')) {
         phoneNumber = '57' + phoneNumber;
       }
-  
+
       const debtorData = {
         ...formData,
         phone: phoneNumber,
@@ -203,15 +216,10 @@ const Debtors = () => {
       }
 
       setIsModalOpen(false);
+      setFormData({ name: '', phone: '', identification: '' });
       setSelectedDebtor(null);
-      setFormData({
-        name: '',
-        phone: '',
-        identification: ''
-      });
-      fetchDebtors();
+      filterDebtors(searchTerm);
     } catch (error) {
-      console.error('Error:', error);
       toast.error('Error al procesar la operación');
     } finally {
       setLoading(false);
@@ -229,61 +237,52 @@ const Debtors = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!currentUser) return;
-    
     if (window.confirm('¿Está seguro de eliminar este deudor?')) {
       try {
         await deleteDoc(doc(db, 'debtors', id));
         toast.success('Deudor eliminado exitosamente');
-        fetchDebtors();
+        setDebtors(prev => prev.filter(d => d.id !== id));
+        filterDebtors(searchTerm);
       } catch (error) {
         toast.error('Error al eliminar el deudor');
       }
     }
   };
 
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedDebtor(null);
-    setFormData({
-      name: '',
-      phone: '',
-      identification: ''
-    });
-  };
-
-  // JSX para el modal de WhatsApp
   const WhatsAppModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md w-full">
-        <h2 className="text-xl font-bold mb-4">Enviar Mensaje de WhatsApp</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mensaje para {selectedDebtor?.name}
-            </label>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-800">Enviar Mensaje</h2>
+          <button
+            onClick={() => setIsWhatsAppModalOpen(false)}
+            className="text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-5">
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-600">Mensaje para {selectedDebtor?.name}</label>
             <textarea
               value={whatsappMessage}
               onChange={(e) => setWhatsappMessage(e.target.value)}
               rows="4"
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-all"
             />
           </div>
 
-          <div className="flex justify-end space-x-3">
+          <div className="flex justify-end gap-3">
             <button
-              onClick={() => {
-                setIsWhatsAppModalOpen(false);
-                setSelectedDebtor(null);
-                setWhatsappMessage('');
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+              onClick={() => setIsWhatsAppModalOpen(false)}
+              className="px-5 py-2.5 text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
             >
               Cancelar
             </button>
             <button
               onClick={sendWhatsAppMessage}
-              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-500 hover:bg-green-600"
+              className="px-5 py-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
             >
               Enviar WhatsApp
             </button>
@@ -295,20 +294,22 @@ const Debtors = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Header y Controles */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-        <h1 className="text-2xl font-bold">Gestión de Deudores</h1>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Gestión de Deudores</h1>
+          <p className="text-gray-500">Administra tus deudores y préstamos activos</p>
+        </div>
         
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          {/* Buscador */}
-          <div className="relative flex-1 md:w-64">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <div className="flex flex-col xs:flex-row gap-3 w-full md:w-auto">
+          <div className="relative flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center">
               <Search className="h-5 w-5 text-gray-400" />
             </div>
             <input
               type="text"
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500"
-              placeholder="Buscar por nombre o teléfono..."
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+              placeholder="Buscar deudor..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -317,108 +318,112 @@ const Debtors = () => {
             />
           </div>
 
-          {/* Botón Nuevo Deudor */}
           <button
-            onClick={() => {
-              setSelectedDebtor(null);
-              setIsModalOpen(true);
-            }}
-            className="bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center whitespace-nowrap"
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl transition-colors whitespace-nowrap"
           >
-            <Add className="mr-2" /> Nuevo Deudor
+            <Add className="w-5 h-5" />
+            Nuevo Deudor
           </button>
         </div>
       </div>
 
       {/* Lista de Deudores */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {filteredDebtors.map((debtor) => (
-          <div key={debtor.id} className="bg-white rounded-lg shadow overflow-hidden">
-            {/* Cabecera de la tarjeta */}
-            <div className="p-4 bg-yellow-50 border-b">
+          <div key={debtor.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow">
+            <div className="p-5 border-b border-gray-100">
               <div className="flex justify-between items-start">
-                <h3 className="text-lg font-semibold text-gray-900">{debtor.name}</h3>
-                <div className="flex space-x-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{debtor.name}</h3>
+                  {debtor.identification && (
+                    <p className="text-sm text-gray-500 mt-1">ID: {debtor.identification}</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
                   <button
                     onClick={() => handleEdit(debtor)}
-                    className="text-blue-600 hover:text-blue-800"
+                    className="p-2 text-gray-400 hover:text-yellow-600 rounded-lg hover:bg-yellow-50 transition-colors"
                   >
-                    <Edit className="h-5 w-5" />
+                    <Edit className="w-5 h-5" />
                   </button>
                   <button
                     onClick={() => handleDelete(debtor.id)}
-                    className="text-red-600 hover:text-red-800"
+                    className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
                   >
-                    <Delete className="h-5 w-5" />
+                    <Delete className="w-5 h-5" />
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Cuerpo de la tarjeta */}
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Teléfono:</span>
-                <span className="font-medium">{debtor.phone}</span>
-              </div>
-              
-              {debtor.identification && (
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Identificación:</span>
-                  <span className="font-medium">{debtor.identification}</span>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 rounded-lg">
+                  <WhatsApp className="w-6 h-6 text-blue-600" />
                 </div>
-              )}
-
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total Prestado:</span>
-                <span className="font-medium text-yellow-600">
-                  {new Intl.NumberFormat('es-CO', {
-                    style: 'currency',
-                    currency: 'COP',
-                    minimumFractionDigits: 0
-                  }).format(debtor.totalPrestado)}
-                </span>
+                <div>
+                  <p className="text-sm text-gray-500">Contacto</p>
+                  <p className="font-medium">{debtor.phone}</p>
+                </div>
               </div>
 
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Préstamos Activos:</span>
-                <span className="font-medium text-green-600">{debtor.prestamosActivos}</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Total Prestado</p>
+                  <p className="font-semibold text-yellow-600">
+                    {new Intl.NumberFormat('es-CO', {
+                      style: 'currency',
+                      currency: 'COP',
+                      minimumFractionDigits: 0
+                    }).format(debtor.totalPrestado)}
+                  </p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Préstamos Activos</p>
+                  <p className="font-semibold text-green-600">{debtor.prestamosActivos}</p>
+                </div>
               </div>
 
-              {/* Botón de WhatsApp */}
               <button
                 onClick={() => openWhatsAppModal(debtor)}
-                className="mt-4 w-full bg-green-500 text-white rounded-lg py-2 px-4 flex items-center justify-center hover:bg-green-600 transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
               >
-                <WhatsApp className="mr-2" />
-                Enviar WhatsApp
+                <WhatsApp className="w-5 h-5" />
+                Enviar Recordatorio
               </button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Mensaje cuando no hay resultados */}
+      {/* Empty State */}
       {filteredDebtors.length === 0 && !loading && (
-        <div className="text-center py-8">
-          <p className="text-gray-500">No se encontraron deudores que coincidan con la búsqueda</p>
+        <div className="text-center py-12">
+          <div className="inline-block p-4 bg-yellow-50 rounded-full mb-4">
+            <Search className="w-12 h-12 text-yellow-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">No se encontraron deudores</h3>
+          <p className="text-gray-500">Intenta con otro término de búsqueda o crea un nuevo deudor</p>
         </div>
       )}
 
-      {/* Spinner de carga */}
+      {/* Loading State */}
       {loading && (
-        <div className="flex justify-center items-center py-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-600"></div>
+        <div className="py-12 flex justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-yellow-500 border-t-transparent"></div>
         </div>
       )}
 
-      {/* Modal de WhatsApp */}
-      {isWhatsAppModalOpen && selectedDebtor && <WhatsAppModal />}
-
-      {/* Modal de Formulario */}
+      {/* Modals */}
+      {isWhatsAppModalOpen && <WhatsAppModal />}
       <FormModal 
         isOpen={isModalOpen}
-        onClose={handleModalClose}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedDebtor(null);
+          setFormData({ name: '', phone: '', identification: '' });
+        }}
         onSubmit={handleSubmit}
         formData={formData}
         setFormData={setFormData}
