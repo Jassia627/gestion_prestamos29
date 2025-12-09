@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useContext } from 'react';
+import { useContext, lazy, Suspense } from 'react';
 import { AuthContext } from '../context/AuthContext';
 
 // Layouts
@@ -9,13 +9,10 @@ import Layout from '../components/layout/Layout';
 import Login from '../pages/auth/Login';
 import Register from '../pages/auth/Register';
 
-// Protected Pages
-import Dashboard from '../pages/admin/Dashboard';
-import Debtors from '../pages/admin/Debtors';
-import Profile from '../pages/user/Profile';
-
-// Lazy loaded components
-import { lazy, Suspense } from 'react';
+// Protected Pages (lazy)
+const Dashboard = lazy(() => import('../pages/admin/Dashboard'));
+const Debtors = lazy(() => import('../pages/admin/Debtors'));
+const Profile = lazy(() => import('../pages/user/Profile'));
 const Loans = lazy(() => import('../pages/admin/Loans'));
 const Payments = lazy(() => import('../pages/admin/Payments'));
 const Reports = lazy(() => import('../pages/admin/Reports'));
@@ -55,7 +52,9 @@ const AppRoutes = () => {
       <Route path="/" element={
         <ProtectedRoute>
           <Layout>
-            <Dashboard />
+            <Suspense fallback={<LoadingScreen />}>
+              <Dashboard />
+            </Suspense>
           </Layout>
         </ProtectedRoute>
       } />
@@ -63,7 +62,9 @@ const AppRoutes = () => {
       <Route path="/debtors" element={
         <ProtectedRoute>
           <Layout>
-            <Debtors />
+            <Suspense fallback={<LoadingScreen />}>
+              <Debtors />
+            </Suspense>
           </Layout>
         </ProtectedRoute>
       } />
@@ -101,7 +102,9 @@ const AppRoutes = () => {
       <Route path="/profile" element={
         <ProtectedRoute>
           <Layout>
-            <Profile />
+            <Suspense fallback={<LoadingScreen />}>
+              <Profile />
+            </Suspense>
           </Layout>
         </ProtectedRoute>
       } />
