@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo, useCallback, memo } from 'react';
 import { db } from '../../config/firebase';
 import { AuthContext } from '../../context/AuthContext';
 import { 
@@ -12,15 +12,16 @@ import {
   where 
 } from 'firebase/firestore';
 import { 
-  Add, 
+  Plus, 
   Edit, 
-  Delete, 
-  AttachMoney,
-  CalendarToday,
-  CheckCircle,
-  Close
-} from '@mui/icons-material';
+  Trash2, 
+  DollarSign,
+  Calendar,
+  CheckCircle2,
+  X
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+import { formatMoney } from '../../utils/formatters';
 
 const Loans = () => {
   const { currentUser } = useContext(AuthContext);
@@ -39,16 +40,24 @@ const Loans = () => {
     description: ''
   });
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount || 0);
-  };
+  // Memoizar queries
+  const debtorsQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(
+      collection(db, 'debtors'),
+      where('adminId', '==', currentUser.uid)
+    );
+  }, [currentUser]);
 
-  const calculateLoanDetails = (amount, interestRate, term) => {
+  const loansQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(
+      collection(db, 'loans'),
+      where('adminId', '==', currentUser.uid)
+    );
+  }, [currentUser]);
+
+  const calculateLoanDetails = useCallback((amount, interestRate, term) => {
     const principal = parseFloat(amount);
     const monthlyInterestRate = parseFloat(interestRate) / 100;
     const months = parseInt(term);
@@ -64,9 +73,9 @@ const Loans = () => {
       totalInterest: totalInterest.toFixed(2),
       monthlyInterest: interestPerMonth.toFixed(2)
     };
-  };
+  }, []);
 
-  const calculateIndefiniteLoanDetails = (amount, interestRate, startDate) => {
+  const calculateIndefiniteLoanDetails = useCallback((amount, interestRate, startDate) => {
     const principal = parseFloat(amount);
     const monthlyInterestRate = parseFloat(interestRate) / 100;
     
@@ -92,9 +101,9 @@ const Loans = () => {
         totalPayment: totalPayment.toFixed(2),
         monthsElapsed: monthsDiff
     };
-  };
+  }, []);
 
-  const finalizeLoan = async (loanId) => {
+  const finalizeLoan = useCallback(async (loanId) => {
     try {
       const loan = loans.find(l => l.id === loanId);
       if (!loan) return;
@@ -119,9 +128,9 @@ const Loans = () => {
       console.error('Error:', error);
       toast.error('Error al finalizar el préstamo');
     }
-  };
+  }, [loans, calculateIndefiniteLoanDetails]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
     if (!currentUser) return;
     
     if (window.confirm('¿Está seguro de eliminar este préstamo?')) {
@@ -133,9 +142,9 @@ const Loans = () => {
         toast.error('Error al eliminar el préstamo');
       }
     }
-  };
+  }, []);
 
-  const handleEdit = (loan) => {
+  const handleEdit = useCallback((loan) => {
     setSelectedLoan(loan);
     setFormData({
       debtorId: loan.debtorId,
@@ -147,9 +156,9 @@ const Loans = () => {
       description: loan.description || ''
     });
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!currentUser) return;
 
@@ -223,32 +232,19 @@ const Loans = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, formData, selectedLoan, calculateLoanDetails, calculateIndefiniteLoanDetails]);
 
-  useEffect(() => {
-    fetchData();
-  }, [currentUser]);
-
-  const fetchData = async () => {
-    if (!currentUser) return;
+  const fetchData = useCallback(async () => {
+    if (!currentUser || !debtorsQuery || !loansQuery) return;
 
     try {
       setLoading(true);
-      const debtorsQuery = query(
-        collection(db, 'debtors'),
-        where('adminId', '==', currentUser.uid)
-      );
       const debtorsSnapshot = await getDocs(debtorsQuery);
       const debtorsData = {};
       debtorsSnapshot.docs.forEach(doc => {
         debtorsData[doc.id] = { id: doc.id, ...doc.data() };
       });
       setDebtors(Object.values(debtorsData));
-
-      const loansQuery = query(
-        collection(db, 'loans'),
-        where('adminId', '==', currentUser.uid)
-      );
       const loansSnapshot = await getDocs(loansQuery);
       const loansData = loansSnapshot.docs.map(doc => {
         const loan = { id: doc.id, ...doc.data() };
@@ -265,15 +261,19 @@ const Loans = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, debtorsQuery, loansQuery]);
 
-  const LoanCard = ({ loan, onFinalize, onEdit, onDelete }) => (
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const LoanCard = memo(({ loan, onFinalize, onEdit, onDelete }) => (
     <div className="bg-white rounded-xl shadow-lg p-5 mb-4 border border-gray-100 hover:shadow-xl transition-shadow">
       <div className="flex justify-between items-center mb-4">
         <div>
           <h3 className="text-xl font-bold text-gray-800">{loan.debtorName}</h3>
-          <p className="text-sm text-gray-500">
-            <CalendarToday className="inline mr-1" fontSize="small" />
+          <p className="text-sm text-gray-500 flex items-center">
+            <Calendar className="inline mr-1 w-4 h-4" />
             {new Date(loan.startDate).toLocaleDateString()}
           </p>
         </div>
@@ -305,7 +305,7 @@ const Loans = () => {
               className="text-green-600 hover:text-green-800 tooltip"
               data-tip="Finalizar préstamo"
             >
-              <CheckCircle fontSize="medium" />
+              <CheckCircle2 className="w-5 h-5" />
             </button>
           )}
           <button
@@ -313,14 +313,14 @@ const Loans = () => {
             className="text-blue-600 hover:text-blue-800 tooltip"
             data-tip="Editar préstamo"
           >
-            <Edit fontSize="medium" />
+            <Edit className="w-5 h-5" />
           </button>
           <button
             onClick={() => onDelete(loan.id)}
             className="text-red-600 hover:text-red-800 tooltip"
             data-tip="Eliminar préstamo"
           >
-            <Delete fontSize="medium" />
+            <Trash2 className="w-5 h-5" />
           </button>
         </div>
         <div className="text-right">
@@ -334,7 +334,7 @@ const Loans = () => {
         </div>
       </div>
     </div>
-  );
+  ));
 
   if (loading) {
     return (
@@ -347,8 +347,8 @@ const Loans = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-        <h1 className="text-3xl font-bold text-gray-900">
-          <AttachMoney className="inline mr-2 text-yellow-600" fontSize="large" />
+        <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+          <DollarSign className="inline mr-2 text-yellow-600 w-8 h-8" />
           Gestión de Préstamos
         </h1>
         <button
@@ -367,7 +367,7 @@ const Loans = () => {
           }}
           className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-3 rounded-xl font-medium transition-colors flex items-center shadow-md"
         >
-          <Add className="mr-2" /> Nuevo Préstamo
+          <Plus className="mr-2 w-5 h-5" /> Nuevo Préstamo
         </button>
       </div>
 
@@ -452,7 +452,7 @@ const Loans = () => {
                         className="text-green-600 hover:text-green-800 tooltip"
                         data-tip="Finalizar préstamo"
                       >
-                        <CheckCircle fontSize="medium" />
+                        <CheckCircle2 className="w-5 h-5" />
                       </button>
                     )}
                     <button
@@ -460,14 +460,14 @@ const Loans = () => {
                       className="text-blue-600 hover:text-blue-800 tooltip"
                       data-tip="Editar préstamo"
                     >
-                      <Edit fontSize="medium" />
+                      <Edit className="w-5 h-5" />
                     </button>
                     <button
                       onClick={() => handleDelete(loan.id)}
                       className="text-red-600 hover:text-red-800 tooltip"
                       data-tip="Eliminar préstamo"
                     >
-                      <Delete fontSize="medium" />
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   </td>
                 </tr>
@@ -489,7 +489,7 @@ const Loans = () => {
                                onClick={() => setIsModalOpen(false)}
                                className="text-gray-400 hover:text-gray-600"
                              >
-                               <Close fontSize="medium" />
+                               <X className="w-5 h-5" />
                              </button>
                            </div>
                            

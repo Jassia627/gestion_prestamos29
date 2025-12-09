@@ -1,18 +1,18 @@
-import { useState, useEffect, useContext } from "react"
+import { useState, useEffect, useContext, useMemo } from "react"
 import { db } from "../../config/firebase"
 import { AuthContext } from "../../context/AuthContext"
 import { collection, query, getDocs, where } from "firebase/firestore"
 import * as XLSX from "xlsx"
 import {
-  FileDownload,
+  Download,
   TrendingUp,
-  AccountBalance,
-  Assessment,
+  Building2,
+  BarChart3,
   PieChart as PieChartIcon,
-  MonetizationOn,
-  DateRange,
+  DollarSign,
+  Calendar,
   Search,
-} from "@mui/icons-material"
+} from "lucide-react"
 import {
   LineChart,
   Line,
@@ -27,6 +27,7 @@ import {
   Cell,
 } from "recharts"
 import toast from "react-hot-toast"
+import { formatMoney } from "../../utils/formatters"
 
 const Reports = () => {
   const { currentUser } = useContext(AuthContext)
@@ -48,14 +49,16 @@ const Reports = () => {
   })
   const [loading, setLoading] = useState(true)
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: "COP",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount || 0)
-  }
+  // Memoizar queries
+  const loansQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(collection(db, "loans"), where("adminId", "==", currentUser.uid));
+  }, [currentUser]);
+
+  const paymentsQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(collection(db, "payments"), where("adminId", "==", currentUser.uid));
+  }, [currentUser]);
 
   const fetchReportData = async () => {
     if (!currentUser) return
@@ -63,8 +66,9 @@ const Reports = () => {
     try {
       setLoading(true)
 
+      if (!loansQuery || !paymentsQuery) return;
+
       // Obtener préstamos
-      const loansQuery = query(collection(db, "loans"), where("adminId", "==", currentUser.uid))
       const loansSnapshot = await getDocs(loansQuery)
       const prestamos = loansSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -72,7 +76,6 @@ const Reports = () => {
       }))
 
       // Obtener pagos
-      const paymentsQuery = query(collection(db, "payments"), where("adminId", "==", currentUser.uid))
       const paymentsSnapshot = await getDocs(paymentsQuery)
       const pagos = paymentsSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -138,7 +141,7 @@ const Reports = () => {
 
   useEffect(() => {
     fetchReportData()
-  }, [currentUser, dateRange])
+  }, [currentUser, dateRange, loansQuery, paymentsQuery])
 
   const generateExcel = () => {
     try {
@@ -168,11 +171,20 @@ const Reports = () => {
     }
   }
 
-  const StatCard = ({ icon: Icon, title, value, color }) => (
+  const StatCard = ({ icon: Icon, title, value, color }) => {
+    const colorClasses = {
+      yellow: "bg-yellow-100 text-yellow-600",
+      green: "bg-green-100 text-green-600",
+      red: "bg-red-100 text-red-600",
+      blue: "bg-blue-100 text-blue-600",
+      purple: "bg-purple-100 text-purple-600"
+    };
+    
+    return (
     <div className="bg-white rounded-xl shadow-lg p-6 transition-all duration-300 hover:shadow-xl">
       <div className="flex items-center space-x-4">
-        <div className={`p-3 rounded-lg bg-${color}-100`}>
-          <Icon className={`text-${color}-600 text-3xl`} />
+        <div className={`p-3 rounded-lg ${colorClasses[color]}`}>
+          <Icon className={`w-8 h-8`} />
         </div>
         <div>
           <p className="text-sm text-gray-500 font-medium">{title}</p>
@@ -180,7 +192,8 @@ const Reports = () => {
         </div>
       </div>
     </div>
-  )
+    )
+  }
 
   return (
     <div className="bg-gray-100 min-h-screen">
@@ -196,7 +209,7 @@ const Reports = () => {
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
               <div className="flex gap-2 flex-1 bg-white rounded-lg shadow-sm">
                 <div className="relative flex-1">
-                  <DateRange className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
                     type="date"
                     value={dateRange.startDate}
@@ -205,7 +218,7 @@ const Reports = () => {
                   />
                 </div>
                 <div className="relative flex-1">
-                  <DateRange className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
                     type="date"
                     value={dateRange.endDate}
@@ -218,7 +231,7 @@ const Reports = () => {
                 onClick={generateExcel}
                 className="flex items-center justify-center gap-2 px-6 py-2.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors shadow-sm"
               >
-                <FileDownload /> Exportar
+                <Download className="w-5 h-5" /> Exportar
               </button>
             </div>
           </div>
@@ -227,13 +240,13 @@ const Reports = () => {
         {/* Tarjetas de Estadísticas */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-8">
           <StatCard
-            icon={MonetizationOn}
+            icon={DollarSign}
             title="Total Préstamos"
             value={formatMoney(reportData.stats.montoTotal)}
             color="yellow"
           />
           <StatCard
-            icon={AccountBalance}
+            icon={Building2}
             title="Total Cobrado"
             value={formatMoney(reportData.stats.montoPagado)}
             color="green"
@@ -245,7 +258,7 @@ const Reports = () => {
             color="red"
           />
           <StatCard
-            icon={Assessment}
+            icon={BarChart3}
             title="Préstamos Activos"
             value={reportData.stats.prestamosActivos}
             color="blue"

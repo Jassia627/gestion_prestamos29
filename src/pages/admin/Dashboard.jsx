@@ -1,15 +1,16 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { db } from '../../config/firebase';
 import { AuthContext } from '../../context/AuthContext';
 import { collection, query, getDocs, where } from 'firebase/firestore';
 import { 
-  AttachMoney, 
-  Calculate,
-  AccountBalance,
-  CheckCircle,
-  Warning,
+  DollarSign, 
+  Calculator,
+  Building2,
+  CheckCircle2,
+  AlertTriangle,
   TrendingUp 
-} from '@mui/icons-material';
+} from 'lucide-react';
+import { formatMoney } from '../../utils/formatters';
 
 const Dashboard = () => {
   const { currentUser } = useContext(AuthContext);
@@ -23,14 +24,14 @@ const Dashboard = () => {
     prestamosVencidos: 0
   });
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount || 0);
-  };
+  // Memoizar la query de préstamos
+  const loansQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(
+      collection(db, 'loans'),
+      where('adminId', '==', currentUser.uid)
+    );
+  }, [currentUser]);
 
   const calcularInteresesPrestamo = (loan) => {
     try {
@@ -56,13 +57,6 @@ const Dashboard = () => {
         const interesMensual = (monto * tasaInteres) / 100;
         const interesTotal = interesMensual * mesesTranscurridos;
         
-        console.log(`Préstamo indefinido:
-          Monto: ${monto}
-          Tasa: ${tasaInteres}%
-          Meses: ${mesesTranscurridos}
-          Interés mensual: ${interesMensual}
-          Interés total: ${interesTotal}`);
-        
         return interesTotal;
 
       } else {
@@ -70,13 +64,6 @@ const Dashboard = () => {
         const termino = parseInt(loan.term) || 0;
         const interesMensual = (monto * tasaInteres) / 100;
         const interesTotal = interesMensual * termino;
-        
-        console.log(`Préstamo fijo:
-          Monto: ${monto}
-          Tasa: ${tasaInteres}%
-          Término: ${termino}
-          Interés mensual: ${interesMensual}
-          Interés total: ${interesTotal}`);
         
         return interesTotal;
       }
@@ -89,22 +76,15 @@ const Dashboard = () => {
 // En el useEffect
 useEffect(() => {
   const fetchData = async () => {
-      if (!currentUser) return;
+      if (!currentUser || !loansQuery) return;
 
       try {
           setLoading(true);
-          const q = query(
-              collection(db, 'loans'),
-              where('adminId', '==', currentUser.uid)
-          );
-
-          const querySnapshot = await getDocs(q);
+          const querySnapshot = await getDocs(loansQuery);
           const loansData = querySnapshot.docs.map(doc => ({
               id: doc.id,
               ...doc.data()
           }));
-
-          console.log('Préstamos cargados:', loansData);
 
           let totalCapital = 0;
           let totalIntereses = 0;
@@ -154,7 +134,7 @@ useEffect(() => {
   };
 
   fetchData();
-}, [currentUser]);
+}, [currentUser, loansQuery]);
 
   if (loading) {
     return (
@@ -163,9 +143,6 @@ useEffect(() => {
       </div>
     );
   }
-
-  // Mostrar los datos crudos en modo desarrollo
-  console.log('Stats calculados:', stats);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -181,12 +158,12 @@ useEffect(() => {
                 {formatMoney(stats.capitalPrestado)}
               </p>
               <div className="mt-2 flex items-center text-sm text-yellow-700">
-                <AttachMoney className="w-4 h-4 mr-1" />
+                <DollarSign className="w-4 h-4 mr-1" />
                 <span>Sin intereses</span>
               </div>
             </div>
             <div className="bg-yellow-100 p-4 rounded-lg">
-              <AttachMoney className="text-yellow-600 text-3xl" />
+              <DollarSign className="text-yellow-600 w-8 h-8" />
             </div>
           </div>
         </div>
@@ -205,7 +182,7 @@ useEffect(() => {
               </div>
             </div>
             <div className="bg-green-100 p-4 rounded-lg">
-              <Calculate className="text-green-600 text-3xl" />
+              <Calculator className="text-green-600 w-8 h-8" />
             </div>
           </div>
         </div>
@@ -219,12 +196,12 @@ useEffect(() => {
                 {formatMoney(stats.capitalPrestado + stats.interesesTotales)}
               </p>
               <div className="mt-2 flex items-center text-sm text-blue-700">
-                <AccountBalance className="w-4 h-4 mr-1" />
+                <Building2 className="w-4 h-4 mr-1" />
                 <span>Capital + Intereses</span>
               </div>
             </div>
             <div className="bg-blue-100 p-4 rounded-lg">
-              <AccountBalance className="text-blue-600 text-3xl" />
+              <Building2 className="text-blue-600 w-8 h-8" />
             </div>
           </div>
         </div>
@@ -238,12 +215,12 @@ useEffect(() => {
                 {stats.prestamosActivos}
               </p>
               <div className="mt-2 flex items-center text-sm text-emerald-700">
-                <CheckCircle className="w-4 h-4 mr-1" />
+                <CheckCircle2 className="w-4 h-4 mr-1" />
                 <span>En buen estado</span>
               </div>
             </div>
             <div className="bg-emerald-100 p-4 rounded-lg">
-              <CheckCircle className="text-emerald-600 text-3xl" />
+              <CheckCircle2 className="text-emerald-600 w-8 h-8" />
             </div>
           </div>
         </div>
@@ -257,12 +234,12 @@ useEffect(() => {
                 {stats.prestamosVencidos}
               </p>
               <div className="mt-2 flex items-center text-sm text-red-700">
-                <Warning className="w-4 h-4 mr-1" />
+                <AlertTriangle className="w-4 h-4 mr-1" />
                 <span>Requieren atención</span>
               </div>
             </div>
             <div className="bg-red-100 p-4 rounded-lg">
-              <Warning className="text-red-600 text-3xl" />
+              <AlertTriangle className="text-red-600 w-8 h-8" />
             </div>
           </div>
         </div>
@@ -281,7 +258,7 @@ useEffect(() => {
               </div>
             </div>
             <div className="bg-purple-100 p-4 rounded-lg">
-              <TrendingUp className="text-purple-600 text-3xl" />
+              <TrendingUp className="text-purple-600 w-8 h-8" />
             </div>
           </div>
         </div>

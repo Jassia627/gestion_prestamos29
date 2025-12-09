@@ -1,15 +1,16 @@
-import { useState, useEffect, useContext } from "react"
+import { useState, useEffect, useContext, useMemo, useCallback } from "react"
 import { db } from "../../config/firebase"
 import { AuthContext } from "../../context/AuthContext"
 import { collection, addDoc, query, getDocs, doc, updateDoc, where } from "firebase/firestore"
-import { Add, Menu, Close } from "@mui/icons-material"
+import { Plus, Menu, X } from "lucide-react"
 import toast from "react-hot-toast"
+import { formatMoney } from "../../utils/formatters"
+import { useDebounce } from "../../hooks/useDebounce"
 
 const Payments = () => {
   const { currentUser } = useContext(AuthContext)
   const [loading, setLoading] = useState(true)
   const [loans, setLoans] = useState([])
-  const [filteredLoans, setFilteredLoans] = useState([])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
@@ -27,33 +28,37 @@ const Payments = () => {
     reference: "",
   })
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: "COP",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount || 0)
-  }
+  // Debounce para búsqueda
+  const debouncedSearchTerm = useDebounce(modalFilters.searchTerm, 300);
+  const debouncedDescription = useDebounce(modalFilters.description, 300);
 
-  const fetchData = async () => {
-    if (!currentUser) return
+  // Memoizar queries
+  const debtorsQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(collection(db, "debtors"), where("adminId", "==", currentUser.uid));
+  }, [currentUser]);
+
+  const loansQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(
+      collection(db, "loans"),
+      where("adminId", "==", currentUser.uid),
+      where("status", "==", "active"),
+    );
+  }, [currentUser]);
+
+  const fetchData = useCallback(async () => {
+    if (!currentUser || !debtorsQuery || !loansQuery) return
 
     try {
       setLoading(true)
 
-      const debtorsQuery = query(collection(db, "debtors"), where("adminId", "==", currentUser.uid))
       const debtorsSnapshot = await getDocs(debtorsQuery)
       const debtorsMap = {}
       debtorsSnapshot.docs.forEach((doc) => {
         debtorsMap[doc.id] = { id: doc.id, ...doc.data() }
       })
 
-      const loansQuery = query(
-        collection(db, "loans"),
-        where("adminId", "==", currentUser.uid),
-        where("status", "==", "active"),
-      )
       const loansSnapshot = await getDocs(loansQuery)
       const loansData = loansSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -63,24 +68,24 @@ const Payments = () => {
       }))
 
       setLoans(loansData)
-      setFilteredLoans(loansData) // Corrected typo here
     } catch (error) {
       console.error("Error:", error)
       toast.error("Error al cargar los datos")
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentUser, debtorsQuery, loansQuery])
 
   useEffect(() => {
     fetchData()
-  }, [currentUser])
+  }, [fetchData])
 
-  const filterLoans = () => {
+  // Memoizar filtrado de préstamos
+  const filteredLoans = useMemo(() => {
     let filtered = [...loans]
 
-    if (modalFilters.searchTerm) {
-      const searchLower = modalFilters.searchTerm.toLowerCase().trim()
+    if (debouncedSearchTerm) {
+      const searchLower = debouncedSearchTerm.toLowerCase().trim()
       filtered = filtered.filter(
         (loan) =>
           loan.debtorName.toLowerCase().includes(searchLower) ||
@@ -96,17 +101,13 @@ const Payments = () => {
       })
     }
 
-    if (modalFilters.description) {
-      const descLower = modalFilters.description.toLowerCase().trim()
+    if (debouncedDescription) {
+      const descLower = debouncedDescription.toLowerCase().trim()
       filtered = filtered.filter((loan) => loan.description && loan.description.toLowerCase().includes(descLower))
     }
 
-    setFilteredLoans(filtered)
-  }
-
-  useEffect(() => {
-    filterLoans()
-  }, [modalFilters, loans])
+    return filtered
+  }, [loans, debouncedSearchTerm, debouncedDescription, modalFilters.dateFilter])
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!currentUser) return
@@ -196,7 +197,7 @@ const Payments = () => {
             onClick={() => setIsModalOpen(true)}
             className="bg-yellow-600 text-white px-3 py-2 md:px-4 md:py-2 rounded-lg flex items-center text-sm md:text-base"
           >
-            <Add className="mr-1 md:mr-2" />
+            <Plus className="mr-1 md:mr-2 w-4 h-4" />
             <span className="hidden md:inline">Nuevo Pago</span>
             <span className="md:hidden">Pago</span>
           </button>
@@ -204,7 +205,7 @@ const Payments = () => {
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden bg-gray-100 p-2 rounded-lg"
           >
-            {isMobileMenuOpen ? <Close /> : <Menu />}
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
       </div>

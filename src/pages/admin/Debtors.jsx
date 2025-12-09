@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo, useCallback, memo } from 'react';
 import { db } from '../../config/firebase';
 import { AuthContext } from '../../context/AuthContext';
 import { 
@@ -11,10 +11,12 @@ import {
   deleteDoc,
   where 
 } from 'firebase/firestore';
-import { Search, Add, Edit, Delete, WhatsApp } from '@mui/icons-material';
+import { Search, Plus, Edit, Trash2, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { formatMoney } from '../../utils/formatters';
+import { useDebounce } from '../../hooks/useDebounce';
 
-const FormModal = ({ isOpen, onClose, onSubmit, formData, setFormData, loading, selectedDebtor }) => {
+const FormModal = memo(({ isOpen, onClose, onSubmit, formData, setFormData, loading, selectedDebtor }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit(e);
@@ -94,14 +96,14 @@ const FormModal = ({ isOpen, onClose, onSubmit, formData, setFormData, loading, 
       </div>
     </div>
   );
-};
+});
 
 const Debtors = () => {
   const { currentUser } = useContext(AuthContext);
   const [debtors, setDebtors] = useState([]);
-  const [filteredDebtors, setFilteredDebtors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [selectedDebtor, setSelectedDebtor] = useState(null);
@@ -112,17 +114,31 @@ const Debtors = () => {
     identification: ''
   });
 
+  // Memoizar la query de deudores
+  const debtorsQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(
+      collection(db, 'debtors'),
+      where('adminId', '==', currentUser.uid)
+    );
+  }, [currentUser]);
+
+  // Memoizar la query de préstamos
+  const loansQuery = useMemo(() => {
+    if (!currentUser) return null;
+    return query(
+      collection(db, 'loans'),
+      where('adminId', '==', currentUser.uid)
+    );
+  }, [currentUser]);
+
   useEffect(() => {
     const fetchDebtors = async () => {
-      if (!currentUser) return;
+      if (!currentUser || !debtorsQuery || !loansQuery) return;
 
       try {
         setLoading(true);
-        const q = query(
-          collection(db, 'debtors'),
-          where('adminId', '==', currentUser.uid)
-        );
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await getDocs(debtorsQuery);
         const debtorsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
@@ -130,10 +146,6 @@ const Debtors = () => {
           prestamosActivos: 0
         }));
 
-        const loansQuery = query(
-          collection(db, 'loans'),
-          where('adminId', '==', currentUser.uid)
-        );
         const loansSnapshot = await getDocs(loansQuery);
         
         loansSnapshot.docs.forEach(doc => {
@@ -148,7 +160,6 @@ const Debtors = () => {
         });
 
         setDebtors(debtorsData);
-        setFilteredDebtors(debtorsData);
       } catch (error) {
         toast.error('Error al cargar los deudores');
       } finally {
@@ -157,24 +168,27 @@ const Debtors = () => {
     };
 
     fetchDebtors();
-  }, [currentUser]);
+  }, [currentUser, debtorsQuery, loansQuery]);
 
-  const filterDebtors = (searchText) => {
-    const filtered = debtors.filter(debtor => 
-      debtor.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      debtor.phone.includes(searchText) ||
-      (debtor.identification && debtor.identification.includes(searchText))
+  // Memoizar el filtrado de deudores
+  const filteredDebtors = useMemo(() => {
+    if (!debouncedSearchTerm.trim()) return debtors;
+    
+    const searchLower = debouncedSearchTerm.toLowerCase();
+    return debtors.filter(debtor => 
+      debtor.name.toLowerCase().includes(searchLower) ||
+      debtor.phone.includes(debouncedSearchTerm) ||
+      (debtor.identification && debtor.identification.includes(debouncedSearchTerm))
     );
-    setFilteredDebtors(filtered);
-  };
+  }, [debtors, debouncedSearchTerm]);
 
-  const openWhatsAppModal = (debtor) => {
+  const openWhatsAppModal = useCallback((debtor) => {
     setSelectedDebtor(debtor);
     setWhatsappMessage(`Hola ${debtor.name}, le recordamos que tiene un saldo pendiente de pago.`);
     setIsWhatsAppModalOpen(true);
-  };
+  }, []);
 
-  const sendWhatsAppMessage = () => {
+  const sendWhatsAppMessage = useCallback(() => {
     if (!selectedDebtor) return;
     
     let cleanPhone = selectedDebtor.phone.replace(/[^0-9]/g, '');
@@ -188,10 +202,12 @@ const Debtors = () => {
     setIsWhatsAppModalOpen(false);
     setSelectedDebtor(null);
     setWhatsappMessage('');
-  };
+  }, [selectedDebtor, whatsappMessage]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
+    if (!currentUser) return;
+    
     try {
       setLoading(true);
   
@@ -218,15 +234,24 @@ const Debtors = () => {
       setIsModalOpen(false);
       setFormData({ name: '', phone: '', identification: '' });
       setSelectedDebtor(null);
-      filterDebtors(searchTerm);
+      
+      // Refetch data
+      const querySnapshot = await getDocs(debtorsQuery);
+      const debtorsData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        totalPrestado: 0,
+        prestamosActivos: 0
+      }));
+      setDebtors(debtorsData);
     } catch (error) {
       toast.error('Error al procesar la operación');
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, formData, selectedDebtor, debtorsQuery]);
 
-  const handleEdit = (debtor) => {
+  const handleEdit = useCallback((debtor) => {
     setSelectedDebtor(debtor);
     setFormData({
       name: debtor.name,
@@ -234,20 +259,19 @@ const Debtors = () => {
       identification: debtor.identification || ''
     });
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
     if (window.confirm('¿Está seguro de eliminar este deudor?')) {
       try {
         await deleteDoc(doc(db, 'debtors', id));
         toast.success('Deudor eliminado exitosamente');
         setDebtors(prev => prev.filter(d => d.id !== id));
-        filterDebtors(searchTerm);
       } catch (error) {
         toast.error('Error al eliminar el deudor');
       }
     }
-  };
+  }, []);
 
   const WhatsAppModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
@@ -302,7 +326,7 @@ const Debtors = () => {
         </div>
         
         <div className="flex flex-col xs:flex-row gap-3 w-full md:w-auto">
-          <div className="relative flex-1">
+            <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center">
               <Search className="h-5 w-5 text-gray-400" />
             </div>
@@ -311,10 +335,7 @@ const Debtors = () => {
               className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
               placeholder="Buscar deudor..."
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                filterDebtors(e.target.value);
-              }}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
@@ -322,7 +343,7 @@ const Debtors = () => {
             onClick={() => setIsModalOpen(true)}
             className="flex items-center justify-center gap-2 px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl transition-colors whitespace-nowrap"
           >
-            <Add className="w-5 h-5" />
+            <Plus className="w-5 h-5" />
             Nuevo Deudor
           </button>
         </div>
@@ -351,7 +372,7 @@ const Debtors = () => {
                     onClick={() => handleDelete(debtor.id)}
                     className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
                   >
-                    <Delete className="w-5 h-5" />
+                    <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
               </div>
@@ -360,7 +381,7 @@ const Debtors = () => {
             <div className="p-5 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-blue-50 rounded-lg">
-                  <WhatsApp className="w-6 h-6 text-blue-600" />
+                  <MessageCircle className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Contacto</p>
@@ -372,11 +393,7 @@ const Debtors = () => {
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-sm text-gray-500 mb-1">Total Prestado</p>
                   <p className="font-semibold text-yellow-600">
-                    {new Intl.NumberFormat('es-CO', {
-                      style: 'currency',
-                      currency: 'COP',
-                      minimumFractionDigits: 0
-                    }).format(debtor.totalPrestado)}
+                    {formatMoney(debtor.totalPrestado)}
                   </p>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
@@ -389,7 +406,7 @@ const Debtors = () => {
                 onClick={() => openWhatsAppModal(debtor)}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
               >
-                <WhatsApp className="w-5 h-5" />
+                <MessageCircle className="w-5 h-5" />
                 Enviar Recordatorio
               </button>
             </div>

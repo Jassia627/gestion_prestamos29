@@ -1,5 +1,5 @@
 import React from 'react';
-import { Warning, CheckCircle, Info, Error as ErrorIcon, Close } from '@mui/icons-material';
+import { AlertTriangle, CheckCircle2, Info, XCircle, X } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 
 const NotificationComponent = () => {
@@ -8,11 +8,11 @@ const NotificationComponent = () => {
   const getIcon = (type) => {
     switch (type) {
       case 'success':
-        return <CheckCircle className="h-6 w-6 text-green-500" />;
+        return <CheckCircle2 className="h-6 w-6 text-green-500" />;
       case 'warning':
-        return <Warning className="h-6 w-6 text-yellow-500" />;
+        return <AlertTriangle className="h-6 w-6 text-yellow-500" />;
       case 'error':
-        return <ErrorIcon className="h-6 w-6 text-red-500" />;
+        return <XCircle className="h-6 w-6 text-red-500" />;
       default:
         return <Info className="h-6 w-6 text-blue-500" />;
     }
@@ -73,7 +73,7 @@ const NotificationComponent = () => {
                     className="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
                   >
                     <span className="sr-only">Close</span>
-                    <Close className="h-5 w-5" />
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
