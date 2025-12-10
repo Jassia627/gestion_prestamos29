@@ -35,6 +35,7 @@ const Loans = () => {
     amount: '',
     interestRate: '',
     term: '',
+    paymentFrequency: 'monthly', // daily, weekly, monthly
     isIndefinite: false,
     startDate: '',
     description: ''
@@ -57,49 +58,75 @@ const Loans = () => {
     );
   }, [currentUser]);
 
-  const calculateLoanDetails = useCallback((amount, interestRate, term) => {
+  const calculateLoanDetails = useCallback((amount, interestRate, term, paymentFrequency = 'monthly') => {
     const principal = parseFloat(amount);
-    const monthlyInterestRate = parseFloat(interestRate) / 100;
-    const months = parseInt(term);
+    // La tasa de interés viene directamente en el porcentaje según la frecuencia
+    const periodInterestRate = parseFloat(interestRate) / 100;
+    const periods = parseInt(term);
     
-    const interestPerMonth = principal * monthlyInterestRate;
-    const totalInterest = interestPerMonth * months;
+    // Calcular interés según frecuencia usando la tasa directamente
+    const interestPerPeriod = principal * periodInterestRate;
+    const totalInterest = interestPerPeriod * periods;
     const totalPayment = principal + totalInterest;
-    const monthlyPayment = totalPayment / months;
+    const periodPayment = totalPayment / periods;
 
     return {
-      monthlyPayment: monthlyPayment.toFixed(2),
+      periodPayment: periodPayment.toFixed(2),
       totalPayment: totalPayment.toFixed(2),
       totalInterest: totalInterest.toFixed(2),
-      monthlyInterest: interestPerMonth.toFixed(2)
+      interestPerPeriod: interestPerPeriod.toFixed(2),
+      periods: periods,
+      // Mantener compatibilidad con código existente
+      monthlyPayment: paymentFrequency === 'monthly' ? periodPayment.toFixed(2) : null,
+      monthlyInterest: paymentFrequency === 'monthly' ? interestPerPeriod.toFixed(2) : null
     };
   }, []);
 
-  const calculateIndefiniteLoanDetails = useCallback((amount, interestRate, startDate) => {
+  const calculateIndefiniteLoanDetails = useCallback((amount, interestRate, startDate, paymentFrequency = 'monthly') => {
     const principal = parseFloat(amount);
-    const monthlyInterestRate = parseFloat(interestRate) / 100;
+    // La tasa de interés viene directamente en el porcentaje según la frecuencia
+    const periodInterestRate = parseFloat(interestRate) / 100;
     
     const start = new Date(startDate);
     const today = new Date();
     
-    let monthsDiff = (today.getFullYear() - start.getFullYear()) * 12 + 
-                    (today.getMonth() - start.getMonth());
+    let interestPerPeriod, periodsElapsed, totalInterest;
     
-    if (today.getDate() < start.getDate()) {
+    if (paymentFrequency === 'daily') {
+      const daysDiff = Math.floor((today - start) / (1000 * 60 * 60 * 24));
+      const daysElapsed = Math.max(0, daysDiff);
+      interestPerPeriod = principal * periodInterestRate;
+      periodsElapsed = daysElapsed;
+      totalInterest = interestPerPeriod * daysElapsed;
+    } else if (paymentFrequency === 'weekly') {
+      const daysDiff = Math.floor((today - start) / (1000 * 60 * 60 * 24));
+      const weeksElapsed = Math.max(0, Math.floor(daysDiff / 7));
+      interestPerPeriod = principal * periodInterestRate;
+      periodsElapsed = weeksElapsed;
+      totalInterest = interestPerPeriod * weeksElapsed;
+    } else {
+      // Mensual
+      let monthsDiff = (today.getFullYear() - start.getFullYear()) * 12 + 
+                      (today.getMonth() - start.getMonth());
+      if (today.getDate() < start.getDate()) {
         monthsDiff -= 1;
+      }
+      monthsDiff = Math.max(0, monthsDiff);
+      interestPerPeriod = principal * periodInterestRate;
+      periodsElapsed = monthsDiff;
+      totalInterest = interestPerPeriod * monthsDiff;
     }
     
-    monthsDiff = Math.max(0, monthsDiff);
-    
-    const interestPerMonth = principal * monthlyInterestRate;
-    const totalInterest = interestPerMonth * monthsDiff;
     const totalPayment = principal + totalInterest;
 
     return {
-        monthlyInterest: interestPerMonth.toFixed(2),
+        interestPerPeriod: interestPerPeriod.toFixed(2),
         totalInterest: totalInterest.toFixed(2),
         totalPayment: totalPayment.toFixed(2),
-        monthsElapsed: monthsDiff
+        periodsElapsed: periodsElapsed,
+        // Mantener compatibilidad
+        monthlyInterest: paymentFrequency === 'monthly' ? interestPerPeriod.toFixed(2) : null,
+        monthsElapsed: paymentFrequency === 'monthly' ? periodsElapsed : null
     };
   }, []);
 
@@ -111,7 +138,8 @@ const Loans = () => {
       const finalCalculation = calculateIndefiniteLoanDetails(
         loan.amount,
         loan.interestRate,
-        loan.startDate
+        loan.startDate,
+        loan.paymentFrequency || 'monthly'
       );
 
       await updateDoc(doc(db, 'loans', loanId), {
@@ -151,6 +179,7 @@ const Loans = () => {
       amount: loan.amount.toString(),
       interestRate: loan.interestRate.toString(),
       term: loan.term?.toString() || '',
+      paymentFrequency: loan.paymentFrequency || 'monthly',
       isIndefinite: loan.isIndefinite,
       startDate: loan.startDate?.split('T')[0] || '',
       description: loan.description || ''
@@ -170,13 +199,15 @@ const Loans = () => {
         loanDetails = calculateIndefiniteLoanDetails(
           formData.amount,
           formData.interestRate,
-          formData.startDate
+          formData.startDate,
+          formData.paymentFrequency
         );
       } else {
         loanDetails = calculateLoanDetails(
           formData.amount,
           formData.interestRate,
-          formData.term
+          formData.term,
+          formData.paymentFrequency
         );
       }
 
@@ -188,22 +219,48 @@ const Loans = () => {
         endDate = endDateObj.toISOString();
       }
 
+      // Calcular fecha de fin según frecuencia
+      let calculatedEndDate = endDate;
+      if (!formData.isIndefinite && formData.term && formData.startDate) {
+        const startDateObj = new Date(formData.startDate);
+        const endDateObj = new Date(startDateObj);
+        const term = parseInt(formData.term);
+        
+        if (formData.paymentFrequency === 'daily') {
+          // Si el plazo está en días
+          endDateObj.setDate(startDateObj.getDate() + term);
+        } else if (formData.paymentFrequency === 'weekly') {
+          // Si el plazo está en semanas
+          endDateObj.setDate(startDateObj.getDate() + (term * 7));
+        } else {
+          // Mensual - el plazo está en meses
+          endDateObj.setMonth(startDateObj.getMonth() + term);
+        }
+        calculatedEndDate = endDateObj.toISOString();
+      }
+
       const loanData = {
         ...formData,
         adminId: currentUser.uid,
         amount: parseFloat(formData.amount),
         interestRate: parseFloat(formData.interestRate),
         term: formData.isIndefinite ? null : parseInt(formData.term),
-        monthlyInterest: parseFloat(loanDetails.monthlyInterest),
+        paymentFrequency: formData.paymentFrequency,
+        interestPerPeriod: parseFloat(loanDetails.interestPerPeriod),
+        periodPayment: formData.isIndefinite ? null : parseFloat(loanDetails.periodPayment),
         totalInterest: parseFloat(loanDetails.totalInterest),
         totalPayment: parseFloat(loanDetails.totalPayment),
-        monthlyPayment: formData.isIndefinite ? null : parseFloat(loanDetails.monthlyPayment),
+        // Mantener compatibilidad con código existente
+        monthlyInterest: loanDetails.monthlyInterest ? parseFloat(loanDetails.monthlyInterest) : parseFloat(loanDetails.interestPerPeriod),
+        monthlyPayment: loanDetails.monthlyPayment ? parseFloat(loanDetails.monthlyPayment) : (formData.paymentFrequency === 'monthly' ? parseFloat(loanDetails.periodPayment) : null),
         status: 'active',
         remainingAmount: parseFloat(loanDetails.totalPayment),
         paidAmount: 0,
+        paidInterest: 0,
+        paidCapital: 0,
         createdAt: new Date().toISOString(),
         startDate: formData.startDate,
-        endDate: endDate
+        endDate: calculatedEndDate
       };
 
       if (selectedLoan) {
@@ -221,6 +278,7 @@ const Loans = () => {
         amount: '',
         interestRate: '',
         term: '',
+        paymentFrequency: 'monthly',
         isIndefinite: false,
         startDate: '',
         description: ''
@@ -326,9 +384,13 @@ const Loans = () => {
         <div className="text-right">
           <p className="text-sm text-gray-600">
             {loan.isIndefinite ? (
-              <span>Interés mensual: {formatMoney(loan.monthlyInterest)}</span>
+              <span>
+                Interés {loan.paymentFrequency === 'daily' ? 'diario' : loan.paymentFrequency === 'weekly' ? 'semanal' : 'mensual'}: {formatMoney(loan.interestPerPeriod || loan.monthlyInterest)}
+              </span>
             ) : (
-              <span>Cuota: {formatMoney(loan.monthlyPayment)}/mes</span>
+              <span>
+                Cuota {loan.paymentFrequency === 'daily' ? 'diaria' : loan.paymentFrequency === 'weekly' ? 'semanal' : 'mensual'}: {formatMoney(loan.periodPayment || loan.monthlyPayment)}
+              </span>
             )}
           </p>
         </div>
@@ -359,6 +421,7 @@ const Loans = () => {
               amount: '',
               interestRate: '',
               term: '',
+              paymentFrequency: 'monthly',
               isIndefinite: false,
               startDate: '',
               description: ''
@@ -418,20 +481,23 @@ const Loans = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-900">
                     <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">
-                      {loan.interestRate}%
+                      {loan.interestRate}% {loan.paymentFrequency === 'daily' ? 'diario' : loan.paymentFrequency === 'weekly' ? 'semanal' : 'mensual'}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-900">
                     {loan.isIndefinite ? (
                       <span className="italic">Indefinido</span>
                     ) : (
-                      `${loan.term} meses`
+                      `${loan.term} ${loan.paymentFrequency === 'daily' ? 'días' : loan.paymentFrequency === 'weekly' ? 'semanas' : 'meses'}`
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">
                     {loan.isIndefinite 
-                      ? formatMoney(loan.monthlyInterest) 
-                      : formatMoney(loan.monthlyPayment)}
+                      ? formatMoney(loan.interestPerPeriod || loan.monthlyInterest)
+                      : formatMoney(loan.periodPayment || loan.monthlyPayment)}
+                    <span className="text-xs text-gray-500 ml-1">
+                      /{loan.paymentFrequency === 'daily' ? 'día' : loan.paymentFrequency === 'weekly' ? 'sem' : 'mes'}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-semibold text-yellow-600">
                     {formatMoney(loan.totalPayment)}
@@ -529,10 +595,27 @@ const Loans = () => {
                                  </div>
                                </div>
                
-                               {/* Campo: Tasa de Interés Mensual */}
+                               {/* Campo: Frecuencia de Pago */}
                                <div>
                                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                                   Tasa de Interés Mensual (%)
+                                   Frecuencia de Pago
+                                 </label>
+                                 <select
+                                   value={formData.paymentFrequency}
+                                   onChange={(e) => setFormData({ ...formData, paymentFrequency: e.target.value })}
+                                   className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
+                                   required
+                                 >
+                                   <option value="daily">Diaria</option>
+                                   <option value="weekly">Semanal</option>
+                                   <option value="monthly">Mensual</option>
+                                 </select>
+                               </div>
+
+                               {/* Campo: Tasa de Interés según Frecuencia */}
+                               <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                                   Tasa de Interés {formData.paymentFrequency === 'daily' ? 'Diaria' : formData.paymentFrequency === 'weekly' ? 'Semanal' : 'Mensual'} (%)
                                  </label>
                                  <div className="relative">
                                    <span className="absolute right-3 top-3 text-gray-500">%</span>
@@ -541,11 +624,18 @@ const Loans = () => {
                                      value={formData.interestRate}
                                      onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
                                      className="w-full pr-8 pl-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
-                                     placeholder="Ej: 5"
+                                     placeholder={formData.paymentFrequency === 'daily' ? 'Ej: 0.5' : formData.paymentFrequency === 'weekly' ? 'Ej: 3' : 'Ej: 10'}
                                      required
                                      step="0.01"
                                    />
                                  </div>
+                                 <p className="mt-1 text-xs text-gray-500">
+                                   {formData.paymentFrequency === 'daily' 
+                                     ? 'Ejemplo: 0.5% diario = 15% mensual aproximadamente'
+                                     : formData.paymentFrequency === 'weekly'
+                                     ? 'Ejemplo: 3% semanal = 12% mensual aproximadamente'
+                                     : 'Tasa de interés mensual'}
+                                 </p>
                                </div>
                
                                {/* Campo: Préstamo Indefinido */}
@@ -565,7 +655,7 @@ const Loans = () => {
                                {!formData.isIndefinite && (
                                  <div>
                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                     Plazo (meses)
+                                     Plazo ({formData.paymentFrequency === 'daily' ? 'días' : formData.paymentFrequency === 'weekly' ? 'semanas' : 'meses'})
                                    </label>
                                    <input
                                      type="number"
@@ -573,6 +663,7 @@ const Loans = () => {
                                      onChange={(e) => setFormData({ ...formData, term: e.target.value })}
                                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
                                      required={!formData.isIndefinite}
+                                     placeholder={formData.paymentFrequency === 'daily' ? 'Ej: 30' : formData.paymentFrequency === 'weekly' ? 'Ej: 4' : 'Ej: 12'}
                                    />
                                  </div>
                                )}
@@ -607,59 +698,78 @@ const Loans = () => {
                              </div>
                
                              {/* Resumen del Préstamo */}
-                             {formData.amount && formData.interestRate && (formData.term || formData.isIndefinite) && (
-                               <div className="bg-gray-50 p-4 rounded-lg">
-                                 <h3 className="text-sm font-semibold mb-3">Resumen del Préstamo</h3>
-                                 <div className="space-y-2 text-sm">
-                                   <div className="flex justify-between">
-                                     <span className="text-gray-600">Capital:</span>
-                                     <span className="font-medium">
-                                       {formatMoney(parseFloat(formData.amount))}
-                                     </span>
-                                   </div>
-                                   <div className="flex justify-between">
-                                     <span className="text-gray-600">Interés Mensual:</span>
-                                     <span className="font-medium text-blue-600">
-                                       {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100))}
-                                     </span>
-                                   </div>
-                                   {!formData.isIndefinite && (
-                                     <>
-                                       <div className="flex justify-between">
-                                         <span className="text-gray-600">Total Intereses:</span>
-                                         <span className="font-medium text-blue-600">
-                                           {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term))}
-                                         </span>
-                                       </div>
-                                       <div className="flex justify-between">
-                                         <span className="text-gray-600">Total a Pagar:</span>
-                                         <span className="font-medium text-green-600">
-                                           {formatMoney(
-                                             parseFloat(formData.amount) + 
-                                             (parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term))
-                                           )}
-                                         </span>
-                                       </div>
-                                       <div className="flex justify-between">
-                                         <span className="text-gray-600">Cuota Mensual:</span>
-                                         <span className="font-medium text-yellow-600">
-                                           {formatMoney(
-                                             (parseFloat(formData.amount) + 
-                                             (parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100) * parseInt(formData.term)))
-                                             / parseInt(formData.term)
-                                           )}
-                                         </span>
-                                       </div>
-                                     </>
-                                   )}
-                                   {formData.isIndefinite && (
-                                     <div className="mt-2 p-2 bg-yellow-50 rounded text-sm text-yellow-800">
-                                       Este es un préstamo indefinido. Se calculará un interés mensual fijo de {formatMoney(parseFloat(formData.amount) * (parseFloat(formData.interestRate) / 100))} hasta que se finalice el préstamo.
+                             {formData.amount && formData.interestRate && (formData.term || formData.isIndefinite) && (() => {
+                               const frequencyLabels = {
+                                 daily: 'Diaria',
+                                 weekly: 'Semanal',
+                                 monthly: 'Mensual'
+                               };
+                               const frequencyLabel = frequencyLabels[formData.paymentFrequency] || 'Mensual';
+                               
+                               let loanDetails;
+                               if (formData.isIndefinite) {
+                                 loanDetails = calculateIndefiniteLoanDetails(
+                                   formData.amount,
+                                   formData.interestRate,
+                                   formData.startDate,
+                                   formData.paymentFrequency
+                                 );
+                               } else {
+                                 loanDetails = calculateLoanDetails(
+                                   formData.amount,
+                                   formData.interestRate,
+                                   formData.term,
+                                   formData.paymentFrequency
+                                 );
+                               }
+                               
+                               return (
+                                 <div className="bg-gray-50 p-4 rounded-lg">
+                                   <h3 className="text-sm font-semibold mb-3">Resumen del Préstamo</h3>
+                                   <div className="space-y-2 text-sm">
+                                     <div className="flex justify-between">
+                                       <span className="text-gray-600">Capital:</span>
+                                       <span className="font-medium">
+                                         {formatMoney(parseFloat(formData.amount))}
+                                       </span>
                                      </div>
-                                   )}
+                                     <div className="flex justify-between">
+                                       <span className="text-gray-600">Interés por {frequencyLabel.toLowerCase()}:</span>
+                                       <span className="font-medium text-blue-600">
+                                         {formatMoney(parseFloat(loanDetails.interestPerPeriod))}
+                                       </span>
+                                     </div>
+                                     {!formData.isIndefinite && (
+                                       <>
+                                         <div className="flex justify-between">
+                                           <span className="text-gray-600">Total Intereses:</span>
+                                           <span className="font-medium text-blue-600">
+                                             {formatMoney(parseFloat(loanDetails.totalInterest))}
+                                           </span>
+                                         </div>
+                                         <div className="flex justify-between">
+                                           <span className="text-gray-600">Total a Pagar:</span>
+                                           <span className="font-medium text-green-600">
+                                             {formatMoney(parseFloat(loanDetails.totalPayment))}
+                                           </span>
+                                         </div>
+                                         <div className="flex justify-between">
+                                           <span className="text-gray-600">Cuota {frequencyLabel}:</span>
+                                           <span className="font-medium text-yellow-600">
+                                             {formatMoney(parseFloat(loanDetails.periodPayment))}
+                                           </span>
+                                         </div>
+                                       </>
+                                     )}
+                                     {formData.isIndefinite && (
+                                       <div className="mt-2 p-2 bg-yellow-50 rounded text-sm text-yellow-800">
+                                         Este es un préstamo indefinido. Se calculará un interés {frequencyLabel.toLowerCase()} fijo de {formatMoney(parseFloat(loanDetails.interestPerPeriod))} hasta que se finalice el préstamo.
+                                       </div>
+                                     )}
+                                   </div>
                                  </div>
-                               </div>
-                             )}
+                               );
+                             })()}
                
                              {/* Botones del Modal */}
                              <div className="flex justify-end space-x-4 mt-6">

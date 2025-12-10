@@ -36,34 +36,48 @@ const Dashboard = () => {
   const calcularInteresesPrestamo = (loan) => {
     try {
       const monto = parseFloat(loan.amount) || 0;
+      // La tasa de interés ya viene guardada según la frecuencia (diaria, semanal o mensual)
       const tasaInteres = parseFloat(loan.interestRate) || 0;
+      const paymentFrequency = loan.paymentFrequency || 'monthly';
+      const periodInterestRate = tasaInteres / 100;
       
       if (loan.isIndefinite) {
-        // Para préstamos indefinidos, calculamos los meses transcurridos
+        // Para préstamos indefinidos, calculamos según frecuencia
         const startDate = new Date(loan.startDate);
         const today = new Date();
-        let mesesTranscurridos = (today.getFullYear() - startDate.getFullYear()) * 12;
-        mesesTranscurridos += today.getMonth() - startDate.getMonth();
+        let interesTotal = 0;
         
-        // Ajuste por día del mes
-        if (today.getDate() < startDate.getDate()) {
-          mesesTranscurridos--;
+        if (paymentFrequency === 'daily') {
+          const daysDiff = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+          const daysElapsed = Math.max(0, daysDiff);
+          const interesDiario = monto * periodInterestRate;
+          interesTotal = interesDiario * daysElapsed;
+        } else if (paymentFrequency === 'weekly') {
+          const daysDiff = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+          const weeksElapsed = Math.max(0, Math.floor(daysDiff / 7));
+          const interesSemanal = monto * periodInterestRate;
+          interesTotal = interesSemanal * weeksElapsed;
+        } else {
+          // Mensual (por defecto)
+          let mesesTranscurridos = (today.getFullYear() - startDate.getFullYear()) * 12;
+          mesesTranscurridos += today.getMonth() - startDate.getMonth();
+          if (today.getDate() < startDate.getDate()) {
+            mesesTranscurridos--;
+          }
+          mesesTranscurridos = Math.max(0, mesesTranscurridos);
+          const interesMensual = monto * periodInterestRate;
+          interesTotal = interesMensual * mesesTranscurridos;
         }
-
-        // Asegurarnos de que no sea negativo
-        mesesTranscurridos = Math.max(0, mesesTranscurridos);
-        
-        // Calcular interés mensual y multiplicar por los meses transcurridos
-        const interesMensual = (monto * tasaInteres) / 100;
-        const interesTotal = interesMensual * mesesTranscurridos;
         
         return interesTotal;
 
       } else {
         // Para préstamos a plazo fijo
+        // El término ya está en la unidad correcta (días, semanas o meses)
         const termino = parseInt(loan.term) || 0;
-        const interesMensual = (monto * tasaInteres) / 100;
-        const interesTotal = interesMensual * termino;
+        // La tasa ya es para el período correspondiente
+        const interesPorPeriodo = monto * periodInterestRate;
+        const interesTotal = interesPorPeriodo * termino;
         
         return interesTotal;
       }

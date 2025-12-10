@@ -25,6 +25,7 @@ const Payments = () => {
     amount: "",
     paymentDate: "",
     paymentMethod: "cash",
+    paymentType: "interests", // "interests" o "capital"
     reference: "",
   })
 
@@ -122,13 +123,53 @@ const Payments = () => {
       }
 
       const paymentAmount = Number.parseFloat(formData.amount)
-
-      if (paymentAmount > loan.remainingAmount) {
-        toast.error("El monto del pago excede la deuda pendiente")
-        return
+      const paymentType = formData.paymentType || "interests"
+      
+      // Calcular intereses acumulados hasta la fecha de pago
+      const accumulatedInterest = calculateAccumulatedInterest(loan, formData.paymentDate)
+      const capitalAmount = parseFloat(loan.amount) || 0
+      
+      // Calcular valores actuales del préstamo
+      const currentPaidInterest = parseFloat(loan.paidInterest || 0)
+      const currentPaidCapital = parseFloat(loan.paidCapital || 0)
+      
+      // Calcular pendientes
+      const pendingInterest = Math.max(0, accumulatedInterest - currentPaidInterest)
+      const pendingCapital = Math.max(0, capitalAmount - currentPaidCapital)
+      
+      let newPaidInterest = currentPaidInterest
+      let newPaidCapital = currentPaidCapital
+      let interestPayment = 0
+      let capitalPayment = 0
+      
+      if (paymentType === "interests") {
+        // Pago a intereses
+        if (paymentAmount > pendingInterest) {
+          toast.error(`El monto excede los intereses pendientes (${formatMoney(pendingInterest)})`)
+          return
+        }
+        interestPayment = paymentAmount
+        newPaidInterest = currentPaidInterest + paymentAmount
+      } else {
+        // Pago a capital
+        if (paymentAmount > pendingCapital) {
+          toast.error(`El monto excede el capital pendiente (${formatMoney(pendingCapital)})`)
+          return
+        }
+        capitalPayment = paymentAmount
+        newPaidCapital = currentPaidCapital + paymentAmount
       }
-
-      const newRemainingAmount = loan.remainingAmount - paymentAmount
+      
+      // Calcular nuevo capital pendiente
+      const newPendingCapital = Math.max(0, capitalAmount - newPaidCapital)
+      
+      // Los intereses acumulados hasta la fecha de pago se mantienen iguales
+      // Pero si se pagó capital, los intereses futuros se calcularán sobre el nuevo capital
+      // Por ahora, mantenemos los intereses acumulados hasta la fecha de pago
+      const newPendingInterest = Math.max(0, accumulatedInterest - newPaidInterest)
+      
+      // Calcular nuevo monto restante total
+      const newRemainingAmount = Math.max(0, newPendingCapital + newPendingInterest)
       const newPaidAmount = (loan.paidAmount || 0) + paymentAmount
 
       const paymentData = {
@@ -137,8 +178,12 @@ const Payments = () => {
         debtorId: loan.debtorId,
         debtorName: loan.debtorName,
         amount: paymentAmount,
+        paymentType: paymentType,
+        interestPayment: interestPayment,
+        capitalPayment: capitalPayment,
         totalLoanAmount: loan.totalPayment,
         remainingAfterPayment: newRemainingAmount,
+        accumulatedInterestAtPayment: accumulatedInterest,
         createdAt: new Date().toISOString(),
       }
 
@@ -148,11 +193,14 @@ const Payments = () => {
       await updateDoc(doc(db, "loans", loan.id), {
         remainingAmount: newRemainingAmount,
         paidAmount: newPaidAmount,
+        paidInterest: newPaidInterest,
+        paidCapital: newPaidCapital,
         status: newStatus,
         lastPaymentDate: formData.paymentDate,
+        lastPaymentType: paymentType,
       })
 
-      toast.success("Pago registrado exitosamente")
+      toast.success(`Pago de ${formatMoney(paymentAmount)} a ${paymentType === "interests" ? "intereses" : "capital"} registrado exitosamente`)
       setIsModalOpen(false)
       resetForm()
       fetchData()
@@ -164,12 +212,82 @@ const Payments = () => {
     }
   }
 
+  // Función para calcular intereses acumulados hasta una fecha específica
+  const calculateAccumulatedInterest = useCallback((loan, paymentDate) => {
+    try {
+      const monto = parseFloat(loan.amount) || 0;
+      const tasaInteres = parseFloat(loan.interestRate) || 0;
+      const paymentFrequency = loan.paymentFrequency || 'monthly';
+      const periodInterestRate = tasaInteres / 100;
+      
+      const startDate = new Date(loan.startDate);
+      const targetDate = paymentDate ? new Date(paymentDate) : new Date();
+      
+      let interesAcumulado = 0;
+      
+      if (loan.isIndefinite) {
+        // Para préstamos indefinidos
+        if (paymentFrequency === 'daily') {
+          const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+          const daysElapsed = Math.max(0, daysDiff);
+          const interesDiario = monto * periodInterestRate;
+          interesAcumulado = interesDiario * daysElapsed;
+        } else if (paymentFrequency === 'weekly') {
+          const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+          const weeksElapsed = Math.max(0, Math.floor(daysDiff / 7));
+          const interesSemanal = monto * periodInterestRate;
+          interesAcumulado = interesSemanal * weeksElapsed;
+        } else {
+          // Mensual
+          let monthsDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12;
+          monthsDiff += targetDate.getMonth() - startDate.getMonth();
+          if (targetDate.getDate() < startDate.getDate()) {
+            monthsDiff--;
+          }
+          monthsDiff = Math.max(0, monthsDiff);
+          const interesMensual = monto * periodInterestRate;
+          interesAcumulado = interesMensual * monthsDiff;
+        }
+      } else {
+        // Para préstamos a plazo fijo, calcular hasta la fecha de pago o hasta el término
+        const termino = parseInt(loan.term) || 0;
+        let periodsElapsed = 0;
+        
+        if (paymentFrequency === 'daily') {
+          const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+          periodsElapsed = Math.min(Math.max(0, daysDiff), termino);
+        } else if (paymentFrequency === 'weekly') {
+          const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+          const weeksDiff = Math.floor(daysDiff / 7);
+          periodsElapsed = Math.min(Math.max(0, weeksDiff), termino);
+        } else {
+          // Mensual
+          let monthsDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12;
+          monthsDiff += targetDate.getMonth() - startDate.getMonth();
+          if (targetDate.getDate() < startDate.getDate()) {
+            monthsDiff--;
+          }
+          periodsElapsed = Math.min(Math.max(0, monthsDiff), termino);
+        }
+        
+        const interesPorPeriodo = monto * periodInterestRate;
+        interesAcumulado = interesPorPeriodo * periodsElapsed;
+      }
+      
+      return interesAcumulado;
+    } catch (error) {
+      console.error('Error calculando intereses acumulados:', error);
+      return 0;
+    }
+  }, []);
+
   const resetForm = () => {
     setFormData({
       loanId: "",
       amount: "",
       paymentDate: "",
       paymentMethod: "cash",
+      paymentType: "interests",
       reference: "",
     })
     setModalFilters({
@@ -258,10 +376,8 @@ const Payments = () => {
                       setFormData((prev) => ({
                         ...prev,
                         loanId: e.target.value,
+                        paymentDate: prev.paymentDate || new Date().toISOString().split('T')[0],
                       }))
-                      if (loan) {
-                        toast.success(`Monto pendiente: ${formatMoney(loan.remainingAmount)}`)
-                      }
                     }}
                     className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 text-sm md:text-base"
                     required
@@ -275,6 +391,58 @@ const Payments = () => {
                     ))}
                   </select>
                 </div>
+
+                {/* Tipo de Pago */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 md:mb-2">Tipo de Pago</label>
+                  <select
+                    value={formData.paymentType}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        paymentType: e.target.value,
+                      }))
+                    }
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 text-sm md:text-base"
+                    required
+                  >
+                    <option value="interests">Pagar Intereses</option>
+                    <option value="capital">Abonar al Capital</option>
+                  </select>
+                </div>
+
+                {/* Información del préstamo seleccionado */}
+                {formData.loanId && (() => {
+                  const selectedLoan = loans.find((l) => l.id === formData.loanId);
+                  if (!selectedLoan) return null;
+                  
+                  const accumulatedInterest = calculateAccumulatedInterest(selectedLoan, formData.paymentDate || new Date().toISOString().split('T')[0]);
+                  const capitalAmount = parseFloat(selectedLoan.amount) || 0;
+                  const currentPaidInterest = parseFloat(selectedLoan.paidInterest || 0);
+                  const currentPaidCapital = parseFloat(selectedLoan.paidCapital || 0);
+                  const pendingInterest = Math.max(0, accumulatedInterest - currentPaidInterest);
+                  const pendingCapital = Math.max(0, capitalAmount - currentPaidCapital);
+                  
+                  return (
+                    <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                      <h4 className="text-sm font-semibold text-blue-900 mb-2">Información del Préstamo</h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs md:text-sm">
+                        <div>
+                          <span className="text-blue-700">Capital pendiente:</span>
+                          <p className="font-semibold text-blue-900">{formatMoney(pendingCapital)}</p>
+                        </div>
+                        <div>
+                          <span className="text-blue-700">Intereses pendientes:</span>
+                          <p className="font-semibold text-blue-900">{formatMoney(pendingInterest)}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-blue-700">Total pendiente:</span>
+                          <p className="font-semibold text-yellow-600">{formatMoney(pendingCapital + pendingInterest)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Monto y Fecha en la misma fila en desktop */}
                 <div>
@@ -294,6 +462,7 @@ const Payments = () => {
                       }
                       className="block w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 text-sm md:text-base"
                       required
+                      step="0.01"
                     />
                   </div>
                 </div>
